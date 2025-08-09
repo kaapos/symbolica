@@ -16495,6 +16495,94 @@ impl PythonExpressionEvaluator {
             .map_err(|e| exceptions::PyValueError::new_err(e))
     }
 
+    /// Evaluate (flattened) using arbitrary precision via the optimized evaluator (real-only, no external functions).
+    fn evaluate_with_prec_flat(
+        &mut self,
+        inputs: Vec<PythonMultiPrecisionFloat>,
+        decimal_digit_precision: u32,
+    ) -> PyResult<Vec<PythonMultiPrecisionFloat>> {
+        if self.eval.is_none() {
+            return Err(exceptions::PyValueError::new_err(
+                "Evaluator contains complex coefficients; use evaluate_complex/evaluate_complex_flat instead.",
+            ));
+        }
+        let (instr, _, _) = self.eval_rat.export_instructions();
+        if instr.iter().any(|i| matches!(i, Instruction::ExternalFun(_, _, _))) {
+            return Err(exceptions::PyValueError::new_err(
+                "Arbitrary-precision optimized evaluation with external functions is not supported.",
+            ));
+        }
+        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+        let mut eval_mp = self
+            .eval_rat
+            .clone()
+            .map_coeff(&|x| x.re.to_multi_prec_float(prec));
+        let input_len = self.eval_rat.get_input_len();
+        let output_len = self.eval_rat.get_output_len();
+        if inputs.len() % input_len != 0 {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length {} is not a multiple of input dimension {}",
+                inputs.len(), input_len
+            )));
+        }
+        let mut outputs: Vec<PythonMultiPrecisionFloat> =
+            Vec::with_capacity((inputs.len() / input_len) * output_len);
+        for chunk in inputs.chunks(input_len) {
+            let mut out = vec![Float::new(prec); output_len];
+            let params: Vec<Float> = chunk
+                .iter()
+                .map(|x| {
+                    let mut v = x.0.clone();
+                    v.set_prec(prec);
+                    v
+                })
+                .collect();
+            eval_mp.evaluate(&params, &mut out);
+            outputs.extend(out.into_iter().map(PythonMultiPrecisionFloat::from));
+        }
+        Ok(outputs)
+    }
+
+    /// Evaluate using arbitrary precision via the optimized evaluator (real-only, no external functions).
+    fn evaluate_with_prec(
+        &mut self,
+        inputs: Vec<Vec<PythonMultiPrecisionFloat>>,
+        decimal_digit_precision: u32,
+    ) -> PyResult<Vec<Vec<PythonMultiPrecisionFloat>>> {
+        if self.eval.is_none() {
+            return Err(exceptions::PyValueError::new_err(
+                "Evaluator contains complex coefficients; use evaluate_complex instead.",
+            ));
+        }
+        let (instr, _, _) = self.eval_rat.export_instructions();
+        if instr.iter().any(|i| matches!(i, Instruction::ExternalFun(_, _, _))) {
+            return Err(exceptions::PyValueError::new_err(
+                "Arbitrary-precision optimized evaluation with external functions is not supported.",
+            ));
+        }
+        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+        let mut eval_mp = self
+            .eval_rat
+            .clone()
+            .map_coeff(&|x| x.re.to_multi_prec_float(prec));
+        let output_len = self.eval_rat.get_output_len();
+        let mut outputs = Vec::with_capacity(inputs.len());
+        for sample in inputs.into_iter() {
+            let mut out = vec![Float::new(prec); output_len];
+            let params: Vec<Float> = sample
+                .into_iter()
+                .map(|x| {
+                    let mut v = x.0;
+                    v.set_prec(prec);
+                    v
+                })
+                .collect();
+            eval_mp.evaluate(&params, &mut out);
+            outputs.push(out.into_iter().map(PythonMultiPrecisionFloat::from).collect());
+        }
+        Ok(outputs)
+    }
+
     /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
     #[gen_stub(skip)]
     #[pyo3(signature =

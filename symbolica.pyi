@@ -5409,6 +5409,26 @@ class Evaluator:
         Yields`[[ 4.+4.j] [14.+0.j] [32.+0.j]]` 
         """
 
+    def evaluate_with_prec(
+        self,
+        inputs: Sequence[Sequence[Decimal | float | str]],
+        decimal_digit_precision: int,
+    ) -> List[List[Decimal]]:
+        """Evaluate with arbitrary precision using the optimized evaluator.
+        Only supported for real-valued evaluators without external functions.
+        Inputs may be Decimal, float or string; outputs are Decimal.
+        """
+
+    def evaluate_with_prec_flat(
+        self,
+        inputs: Sequence[Decimal | float | str],
+        decimal_digit_precision: int,
+    ) -> List[Decimal]:
+        """Evaluate (flattened) with arbitrary precision using the optimized evaluator.
+        Only supported for real-valued evaluators without external functions.
+        Inputs may be Decimal, float or string; outputs are Decimal.
+        """
+
 
 class CompiledRealEvaluator:
     """A compiled evaluator of an expression."""
