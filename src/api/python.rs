@@ -7186,7 +7186,8 @@ impl PythonExpression {
         max_common_pair_cache_entries = 1_000_000,
         max_common_pair_distance = 100,
         external_functions = None,
-        conditionals = None),
+        conditionals = None,
+        decimal_digit_precision = 100),
         )]
     pub fn evaluator(
         &self,
@@ -7206,6 +7207,7 @@ impl PythonExpression {
         ))]
         external_functions: Option<BTreeMap<(PolyVariable, String), Py<PyAny>>>,
         conditionals: Option<Vec<PolyVariable>>,
+        decimal_digit_precision: u32,
         py: Python,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
@@ -7357,7 +7359,7 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
-        let external_functions_complex = if let Some(ef) = external_functions {
+        let external_functions_complex = if let Some(ef) = external_functions.as_ref() {
             ef.clone()
                 .into_iter()
                 .map(move |((_, name), f)| {
@@ -7389,12 +7391,77 @@ impl PythonExpression {
                     "Could not create complex evaluator: {e}",
                 ))
             })?;
+        
+        // Build fixed-precision Float evaluators (real-only)
+        let mp_bit_precision = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+        let (eval_mp, eval_mp_ext) = if eval.is_real() {
+            let eval_mp_base = Some(
+                eval
+                    .clone()
+                    .map_coeff(&|x| x.re.to_multi_prec_float(mp_bit_precision)),
+            );
+
+            // External functions for Float, if provided
+            let eval_mp_ext = if let Some(ef) = external_functions.as_ref() {
+                let external_functions_mp: HashMap<_, Box<dyn Fn(&[Float]) -> Float + Send + Sync>> = ef
+                    .clone()
+                    .into_iter()
+                    .map(move |((_, name), f)| {
+                        let ff: Box<dyn Fn(&[Float]) -> Float + Send + Sync> = Box::new({
+                            let f = f.clone();
+                            move |args| {
+                                Python::with_gil(|py| {
+                                    let arg_map: Vec<_> = args
+                                        .iter()
+                                        .map(|x| PythonMultiPrecisionFloat(x.clone())
+                                            .into_pyobject(py)
+                                            .expect("Could not convert to Python object"))
+                                        .collect();
+
+                                    let mut vv = f
+                                        .call(py, (arg_map,), None)
+                                        .expect("Bad callback function")
+                                        .extract::<PythonMultiPrecisionFloat>(py)
+                                        .expect("Function did not return a Decimal/Float")
+                                        .0;
+                                    vv.set_prec(mp_bit_precision);
+                                    vv
+                                })
+                            }
+                        });
+                        (name.clone(), ff)
+                    })
+                    .collect();
+
+                Some(
+                    eval
+                        .clone()
+                        .map_coeff(&|x| x.re.to_multi_prec_float(mp_bit_precision))
+                        .with_external_functions(external_functions_mp)
+                        .map_err(|e| {
+                            exceptions::PyValueError::new_err(format!(
+                                "Could not create arbitrary-precision evaluator: {e}",
+                            ))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+            (eval_mp_base, eval_mp_ext)
+        } else {
+            (None, None)
+        };
 
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
             eval: eval_f64,
             eval_complex,
             eval_complex_ext,
+            eval_mp,
+            eval_mp_ext,
+            mp_decimal_precision: decimal_digit_precision,
+            mp_bit_precision,
         })
     }
 
@@ -7424,7 +7491,8 @@ impl PythonExpression {
         max_common_pair_cache_entries = 1_000_000,
         max_common_pair_distance = 100,
         external_functions = None,
-        conditionals = None),
+        conditionals = None,
+        decimal_digit_precision = 100),
         )]
     pub fn evaluator_multiple(
         _cls: &Bound<'_, PyType>,
@@ -7445,6 +7513,7 @@ impl PythonExpression {
         ))]
         external_functions: Option<HashMap<(PolyVariable, String), Py<PyAny>>>,
         conditionals: Option<Vec<PolyVariable>>,
+        decimal_digit_precision: u32,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
@@ -7595,7 +7664,7 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
-        let external_functions_complex = if let Some(ef) = external_functions {
+        let external_functions_complex = if let Some(ef) = external_functions.as_ref() {
             ef.clone()
                 .into_iter()
                 .map(move |((_, name), f)| {
@@ -7628,11 +7697,75 @@ impl PythonExpression {
                 ))
             })?;
 
+        // Build fixed-precision Float evaluators (real-only)
+        let mp_bit_precision = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+        let (eval_mp, eval_mp_ext) = if eval.is_real() {
+            let eval_mp_base = Some(
+                eval
+                    .clone()
+                    .map_coeff(&|x| x.re.to_multi_prec_float(mp_bit_precision)),
+            );
+
+            let eval_mp_ext = if let Some(ef) = external_functions.as_ref() {
+                let external_functions_mp: HashMap<_, Box<dyn Fn(&[Float]) -> Float + Send + Sync>> = ef
+                    .clone()
+                    .into_iter()
+                    .map(move |((_, name), f)| {
+                        let ff: Box<dyn Fn(&[Float]) -> Float + Send + Sync> = Box::new({
+                            let f = f.clone();
+                            move |args| {
+                                Python::with_gil(|py| {
+                                    let arg_map: Vec<_> = args
+                                        .iter()
+                                        .map(|x| PythonMultiPrecisionFloat(x.clone())
+                                            .into_pyobject(py)
+                                            .expect("Could not convert to Python object"))
+                                        .collect();
+
+                                    let mut vv = f
+                                        .call(py, (arg_map,), None)
+                                        .expect("Bad callback function")
+                                        .extract::<PythonMultiPrecisionFloat>(py)
+                                        .expect("Function did not return a Decimal/Float")
+                                        .0;
+                                    vv.set_prec(mp_bit_precision);
+                                    vv
+                                })
+                            }
+                        });
+                        (name.clone(), ff)
+                    })
+                    .collect();
+
+                Some(
+                    eval
+                        .clone()
+                        .map_coeff(&|x| x.re.to_multi_prec_float(mp_bit_precision))
+                        .with_external_functions(external_functions_mp)
+                        .map_err(|e| {
+                            exceptions::PyValueError::new_err(format!(
+                                "Could not create arbitrary-precision evaluator: {e}",
+                            ))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+            (eval_mp_base, eval_mp_ext)
+        } else {
+            (None, None)
+        };
+        
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
             eval: eval_f64,
             eval_complex,
             eval_complex_ext,
+            eval_mp,
+            eval_mp_ext,
+            mp_decimal_precision: decimal_digit_precision,
+            mp_bit_precision,
         })
     }
 
@@ -15864,6 +15997,11 @@ pub struct PythonExpressionEvaluator {
     pub eval: Option<ExpressionEvaluatorWithExternalFunctions<f64>>,
     pub eval_complex: ExpressionEvaluator<Complex<f64>>,
     pub eval_complex_ext: ExpressionEvaluatorWithExternalFunctions<Complex<f64>>,
+    // Fixed-precision arbitrary-precision evaluators (real-only)
+    pub eval_mp: Option<ExpressionEvaluator<Float>>,
+    pub eval_mp_ext: Option<ExpressionEvaluatorWithExternalFunctions<Float>>,
+    pub mp_decimal_precision: u32,
+    pub mp_bit_precision: u32,
 }
 
 #[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
@@ -16499,24 +16637,12 @@ impl PythonExpressionEvaluator {
     fn evaluate_with_prec_flat(
         &mut self,
         inputs: Vec<PythonMultiPrecisionFloat>,
-        decimal_digit_precision: u32,
     ) -> PyResult<Vec<PythonMultiPrecisionFloat>> {
         if self.eval.is_none() {
             return Err(exceptions::PyValueError::new_err(
                 "Evaluator contains complex coefficients; use evaluate_complex/evaluate_complex_flat instead.",
             ));
         }
-        let (instr, _, _) = self.eval_rat.export_instructions();
-        if instr.iter().any(|i| matches!(i, Instruction::ExternalFun(_, _, _))) {
-            return Err(exceptions::PyValueError::new_err(
-                "Arbitrary-precision optimized evaluation with external functions is not supported.",
-            ));
-        }
-        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
-        let mut eval_mp = self
-            .eval_rat
-            .clone()
-            .map_coeff(&|x| x.re.to_multi_prec_float(prec));
         let input_len = self.eval_rat.get_input_len();
         let output_len = self.eval_rat.get_output_len();
         if inputs.len() % input_len != 0 {
@@ -16528,16 +16654,26 @@ impl PythonExpressionEvaluator {
         let mut outputs: Vec<PythonMultiPrecisionFloat> =
             Vec::with_capacity((inputs.len() / input_len) * output_len);
         for chunk in inputs.chunks(input_len) {
-            let mut out = vec![Float::new(prec); output_len];
+            let mut out = vec![Float::new(self.mp_bit_precision); output_len];
             let params: Vec<Float> = chunk
                 .iter()
                 .map(|x| {
                     let mut v = x.0.clone();
-                    v.set_prec(prec);
+                    v.set_prec(self.mp_bit_precision);
                     v
                 })
                 .collect();
-            eval_mp.evaluate(&params, &mut out);
+            
+            if let Some(ev) = self.eval_mp_ext.as_mut() {
+                ev.evaluate(&params, &mut out);
+            } else if let Some(ev) = self.eval_mp.as_mut() {
+                ev.evaluate(&params, &mut out);
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Evaluator does not support arbitrary-precision evaluation (complex-valued).",
+                ));
+            }
+
             outputs.extend(out.into_iter().map(PythonMultiPrecisionFloat::from));
         }
         Ok(outputs)
@@ -16547,37 +16683,35 @@ impl PythonExpressionEvaluator {
     fn evaluate_with_prec(
         &mut self,
         inputs: Vec<Vec<PythonMultiPrecisionFloat>>,
-        decimal_digit_precision: u32,
     ) -> PyResult<Vec<Vec<PythonMultiPrecisionFloat>>> {
         if self.eval.is_none() {
             return Err(exceptions::PyValueError::new_err(
                 "Evaluator contains complex coefficients; use evaluate_complex instead.",
             ));
         }
-        let (instr, _, _) = self.eval_rat.export_instructions();
-        if instr.iter().any(|i| matches!(i, Instruction::ExternalFun(_, _, _))) {
-            return Err(exceptions::PyValueError::new_err(
-                "Arbitrary-precision optimized evaluation with external functions is not supported.",
-            ));
-        }
-        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
-        let mut eval_mp = self
-            .eval_rat
-            .clone()
-            .map_coeff(&|x| x.re.to_multi_prec_float(prec));
         let output_len = self.eval_rat.get_output_len();
         let mut outputs = Vec::with_capacity(inputs.len());
         for sample in inputs.into_iter() {
-            let mut out = vec![Float::new(prec); output_len];
+            let mut out = vec![Float::new(self.mp_bit_precision); output_len];
             let params: Vec<Float> = sample
                 .into_iter()
                 .map(|x| {
                     let mut v = x.0;
-                    v.set_prec(prec);
+                    v.set_prec(self.mp_bit_precision);
                     v
                 })
                 .collect();
-            eval_mp.evaluate(&params, &mut out);
+            
+            if let Some(ev) = self.eval_mp_ext.as_mut() {
+                ev.evaluate(&params, &mut out);
+            } else if let Some(ev) = self.eval_mp.as_mut() {
+                ev.evaluate(&params, &mut out);
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Evaluator does not support arbitrary-precision evaluation (complex-valued).",
+                ));
+            }
+
             outputs.push(out.into_iter().map(PythonMultiPrecisionFloat::from).collect());
         }
         Ok(outputs)

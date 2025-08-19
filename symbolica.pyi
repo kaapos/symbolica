@@ -2203,6 +2203,7 @@ class Expression:
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[
             Sequence[float | complex]], float | complex]]] = None,
         conditionals: Optional[Sequence[Expression]] = None,
+        decimal_digit_precision: int = 100,
     ) -> Evaluator:
         """Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
         All constants and functions should be provided as dictionaries, where the function
@@ -2290,6 +2291,7 @@ class Expression:
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[
             Sequence[float | complex]], float | complex]]] = None,
         conditionals: Optional[Sequence[Expression]] = None,
+        decimal_digit_precision: int = 100,
     ) -> Evaluator:
         """Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
         See `Expression.evaluator()` for more information.
@@ -5412,20 +5414,18 @@ class Evaluator:
     def evaluate_with_prec(
         self,
         inputs: Sequence[Sequence[Decimal | float | str]],
-        decimal_digit_precision: int,
     ) -> List[List[Decimal]]:
         """Evaluate with arbitrary precision using the optimized evaluator.
-        Only supported for real-valued evaluators without external functions.
+        Only supported for real-valued evaluators.
         Inputs may be Decimal, float or string; outputs are Decimal.
         """
 
     def evaluate_with_prec_flat(
         self,
         inputs: Sequence[Decimal | float | str],
-        decimal_digit_precision: int,
     ) -> List[Decimal]:
         """Evaluate (flattened) with arbitrary precision using the optimized evaluator.
-        Only supported for real-valued evaluators without external functions.
+        Only supported for real-valued evaluators.
         Inputs may be Decimal, float or string; outputs are Decimal.
         """
 
