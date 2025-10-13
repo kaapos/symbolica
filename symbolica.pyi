@@ -16,7 +16,7 @@ Examples
 
 from __future__ import annotations
 from enum import Enum
-from typing import Any, Callable, Literal, overload, Iterator, Sequence
+from typing import Any, Callable, Literal, Optional, overload, Iterator, Sequence
 from decimal import Decimal
 import numpy as np
 import numpy.typing as npt
@@ -8734,10 +8734,11 @@ class NumericalIntegrator:
 
     def get_live_estimate(
         self,
-    ) -> tuple[float, float, float, float, float, int]:
+    ) -> tuple[float, float, float, float, float, int, Optional[Sample], Optional[Sample]]:
         """
         Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
         for the current iteration, including the points submitted in the current iteration.
+        Also returns the sample coordinates that produced the maximum negative and positive evaluations.
         """
 
     def probe(self, probe: Probe) -> float:

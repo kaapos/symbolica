@@ -19408,30 +19408,45 @@ impl PythonNumericalIntegrator {
 
     /// Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
     /// for the current iteration, including the points submitted in the current iteration.
-    fn get_live_estimate(&self) -> PyResult<(f64, f64, f64, f64, f64, usize)> {
+    /// Also returns the sample coordinates that produced the maximum negative and positive evaluations.
+    fn get_live_estimate(&self) -> PyResult<(f64, f64, f64, f64, f64, usize, Option<PythonSample>, Option<PythonSample>)> {
         match &self.grid {
             Grid::Continuous(cs) | Grid::Uniform(_, cs) => {
                 let mut a = cs.accumulator.shallow_copy();
                 a.update_iter(false);
+                
+                // Convert the max eval samples to PythonSample if they exist
+                let max_neg_sample = cs.accumulator.max_eval_negative_xs.as_ref().map(|s| PythonSample::from_sample(s));
+                let max_pos_sample = cs.accumulator.max_eval_positive_xs.as_ref().map(|s| PythonSample::from_sample(s));
+                
                 Ok((
                     a.avg,
                     a.err,
                     a.chi_sq,
-                    a.max_eval_negative,
-                    a.max_eval_positive,
+                    cs.accumulator.max_eval_negative,
+                    cs.accumulator.max_eval_positive,
                     a.processed_samples,
+                    max_neg_sample,
+                    max_pos_sample,
                 ))
             }
             Grid::Discrete(ds) => {
                 let mut a = ds.accumulator.shallow_copy();
                 a.update_iter(false);
+                
+                // Convert the max eval samples to PythonSample if they exist
+                let max_neg_sample = ds.accumulator.max_eval_negative_xs.as_ref().map(|s| PythonSample::from_sample(s));
+                let max_pos_sample = ds.accumulator.max_eval_positive_xs.as_ref().map(|s| PythonSample::from_sample(s));
+                
                 Ok((
                     a.avg,
                     a.err,
                     a.chi_sq,
-                    a.max_eval_negative,
-                    a.max_eval_positive,
+                    ds.accumulator.max_eval_negative,
+                    ds.accumulator.max_eval_positive,
                     a.processed_samples,
+                    max_neg_sample,
+                    max_pos_sample,
                 ))
             }
         }
