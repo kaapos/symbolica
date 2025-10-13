@@ -5636,9 +5636,10 @@ class NumericalIntegrator:
 
     def get_live_estimate(
         self,
-    ) -> Tuple[float, float, float, float, float, int]:
+    ) -> Tuple[float, float, float, float, float, int, Optional[Sample], Optional[Sample]]:
         """Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
-        for the current iteration, including the points submitted in the current iteration."""
+        for the current iteration, including the points submitted in the current iteration.
+        Also returns the sample coordinates that produced the maximum negative and positive evaluations."""
 
     def sample(self, num_samples: int, rng: RandomNumberGenerator) -> List[Sample]:
         """Sample `num_samples` points from the grid using the random number generator
