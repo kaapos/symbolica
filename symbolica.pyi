@@ -10480,10 +10480,11 @@ class NumericalIntegrator:
 
     def get_live_estimate(
         self,
-    ) -> tuple[float, float, float, float, float, int]:
+    ) -> tuple[float, float, float, float, float, int, Sample | None, Sample | None]:
         """
         Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
         for the current iteration, including the points submitted in the current iteration.
+        Also returns the sample coordinates that produced the maximum negative and positive evaluations.
         """
 
     def probe(self, probe: Probe) -> float:
