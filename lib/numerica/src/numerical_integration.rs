@@ -29,7 +29,7 @@
 //!          }
 //!      }
 //!     
-//!      grid.update(1.5, 1.5);
+//!      grid.update(1.5, 1.5, false);
 //!     
 //!      println!(
 //!          "Integral at iteration {}: {}",
@@ -497,7 +497,7 @@ impl<T: Real + Constructible + Copy + RealLike + PartialOrd> Sample<T> {
 ///          }
 ///      }
 ///     
-///      grid.update(1.5, 1.5);
+///      grid.update(1.5, 1.5, false);
 ///     
 ///      println!(
 ///          "Integral at iteration {}: {}",
@@ -592,11 +592,11 @@ impl<T: Real + Constructible + Copy + RealLike + PartialOrd> Grid<T> {
     }
 
     /// Update the grid based on the samples added through [`Grid::add_training_sample`].
-    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T) {
+    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T, weighted_average: bool) {
         match self {
-            Grid::Continuous(g) => g.update(continuous_learning_rate),
-            Grid::Discrete(g) => g.update(discrete_learning_rate, continuous_learning_rate),
-            Grid::Uniform(_, g) => g.update(continuous_learning_rate),
+            Grid::Continuous(g) => g.update(continuous_learning_rate, weighted_average),
+            Grid::Discrete(g) => g.update(discrete_learning_rate, continuous_learning_rate, weighted_average),
+            Grid::Uniform(_, g) => g.update(continuous_learning_rate, weighted_average),
         }
     }
 
@@ -723,15 +723,15 @@ impl<T: Real + Constructible + Copy + RealLike + PartialOrd> DiscreteGrid<T> {
     /// and adapt all sub-grids based on the new training samples.
     ///
     /// If `learning_rate` is set to 0, no training happens.
-    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T) {
+    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T, weighted_average: bool) {
         let mut err_sum = T::new_zero();
         for bin in &mut self.bins {
             if let Some(sub_grid) = &mut bin.sub_grid {
-                sub_grid.update(discrete_learning_rate, continuous_learning_rate);
+                sub_grid.update(discrete_learning_rate, continuous_learning_rate, weighted_average);
             }
 
             let acc = &mut bin.accumulator;
-            acc.update_iter(false);
+            acc.update_iter(weighted_average);
 
             if acc.processed_samples > 1 {
                 err_sum += acc.err * T::new_from_usize(acc.processed_samples - 1).sqrt();
@@ -782,7 +782,7 @@ impl<T: Real + Constructible + Copy + RealLike + PartialOrd> DiscreteGrid<T> {
             bin.pdf /= sum;
         }
 
-        self.accumulator.update_iter(false);
+        self.accumulator.update_iter(weighted_average);
     }
 
     /// Sample a point form this grid, writing the result in `sample`.
@@ -977,12 +977,12 @@ impl<T: Real + Constructible + Copy + RealLike + PartialOrd> ContinuousGrid<T> {
     /// Update the grid based on the added training samples. This will move the partition bounds of every dimension.
     ///
     /// The `learning_rate` determines the speed of the adaptation. If it is set to `0`, no training will be performed.
-    pub fn update(&mut self, learning_rate: T) {
+    pub fn update(&mut self, learning_rate: T, weighted_average: bool) {
         for d in self.continuous_dimensions.iter_mut() {
             d.update(learning_rate);
         }
 
-        self.accumulator.update_iter(false);
+        self.accumulator.update_iter(weighted_average);
     }
 
     /// Returns `Ok` when this grid can be merged with another grid,
@@ -1369,7 +1369,7 @@ mod test {
                 }
             }
 
-            grid.update(1.5, 1.5);
+            grid.update(1.5, 1.5, false);
         }
 
         assert_eq!(grid.accumulator.avg, 0.9718412953459551);
@@ -1398,7 +1398,7 @@ mod test {
                 }
             }
 
-            grid.update(1.5, 1.5);
+            grid.update(1.5, 1.5, false);
         }
 
         let r = grid.get_statistics();
