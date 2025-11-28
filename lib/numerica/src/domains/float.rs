@@ -4486,7 +4486,7 @@ impl<'py> FromPyObject<'_, 'py> for PythonMultiPrecisionFloat {
 
             Ok(Float::parse(
                 &a,
-                Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
+                Some(((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32).max(2)),
             )
             .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
             .into())
