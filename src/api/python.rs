@@ -16328,6 +16328,16 @@ impl PythonExpressionEvaluator {
         other: &PythonExpressionEvaluator,
         cpe_iterations: Option<usize>,
     ) -> PyResult<()> {
+        // Check that arbitrary precision settings match if both have mp evaluators
+        if self.eval_mp.is_some() && other.eval_mp.is_some() {
+            if self.mp_decimal_precision != other.mp_decimal_precision {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Cannot merge evaluators with different precisions: {} vs {} decimal digits",
+                    self.mp_decimal_precision, other.mp_decimal_precision
+                )));
+            }
+        }
+
         self.eval_rat
             .merge(other.eval_rat.clone(), cpe_iterations)
             .map_err(|e| {
@@ -16354,6 +16364,25 @@ impl PythonExpressionEvaluator {
 
         self.eval_complex_ext
             .update_stack(self.eval_complex.clone());
+
+        // Update arbitrary precision evaluators
+        if self.eval_rat.is_real()
+            && let Some(old_eval_mp) = &mut self.eval_mp
+        {
+            let new_eval_mp = self
+                .eval_rat
+                .clone()
+                .map_coeff(&|x| x.to_real().unwrap().to_multi_prec_float(self.mp_bit_precision));
+
+            *old_eval_mp = new_eval_mp;
+
+            if let Some(old_eval_mp_ext) = &mut self.eval_mp_ext {
+                old_eval_mp_ext.update_stack(old_eval_mp.clone());
+            }
+        } else {
+            self.eval_mp = None;
+            self.eval_mp_ext = None;
+        };
 
         Ok(())
     }
