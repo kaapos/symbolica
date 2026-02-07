@@ -2558,6 +2558,10 @@ pub trait FilterFn: Fn(&Match) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(FilterFn);
 impl<T: Clone + Send + Sync + Fn(&Match) -> bool> FilterFn for T {}
 
+pub trait FilterSingleFn: Fn(AtomView<'_>) -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(FilterSingleFn);
+impl<T: Clone + Send + Sync + Fn(AtomView<'_>) -> bool> FilterSingleFn for T {}
+
 pub trait CmpFn: Fn(&Match, &Match) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(CmpFn);
 impl<T: Clone + Send + Sync + Fn(&Match, &Match) -> bool> CmpFn for T {}
@@ -2735,7 +2739,46 @@ impl Symbol {
     /// use symbolica::{id::WildcardRestriction, symbol};
     /// symbol!("x_").filter(|x| x.to_atom() > 1);
     /// ```
+    #[deprecated(since = "1.4.0", note = "Use filter_single or filter_match")]
     pub fn filter(&self, f: impl FilterFn + 'static) -> Condition<PatternRestriction> {
+        self.restrict(WildcardRestriction::filter(f))
+    }
+
+    /// Restrict a wildcard symbol with a filter function `f`.
+    ///
+    /// # Examples
+    /// Restrict the wildcard `x_` to be greater than 1:
+    /// ```
+    /// use symbolica::{id::WildcardRestriction, symbol};
+    /// symbol!("x_").filter_single(|x| x > 1);
+    /// ```
+    pub fn filter_single(
+        &self,
+        f: impl FilterSingleFn + 'static + Clone,
+    ) -> Condition<PatternRestriction> {
+        if self.get_wildcard_level() != 1 {
+            panic!(
+                "filter_single can only be used on single wildcards (with one underscore), but {} has level {}",
+                self,
+                self.get_wildcard_level()
+            );
+        }
+
+        self.restrict(WildcardRestriction::filter(move |m| match m {
+            Match::Single(a) => f(*a),
+            _ => unreachable!("Expected single match for filter_single, but got {m:?}"),
+        }))
+    }
+
+    /// Restrict a wildcard symbol with a filter function `f`.
+    ///
+    /// # Examples
+    /// Restrict the wildcard `x_` to be greater than 1:
+    /// ```
+    /// use symbolica::{id::WildcardRestriction, symbol};
+    /// symbol!("x_").filter(|x| x.to_atom() > 1);
+    /// ```
+    pub fn filter_match(&self, f: impl FilterFn + 'static) -> Condition<PatternRestriction> {
         self.restrict(WildcardRestriction::filter(f))
     }
 
@@ -5237,7 +5280,7 @@ mod test {
         let p1 = parse!("f(v1_)").to_pattern();
         let rhs1 = parse!("f(v1_ - 1)").to_pattern();
 
-        let rest = symbol!("v1_").filter(|x| {
+        let rest = symbol!("v1_").filter_match(|x| {
             let n: Result<i64, _> = x.to_atom().try_into();
             if let Ok(y) = n { y > 0i64 } else { false }
         });

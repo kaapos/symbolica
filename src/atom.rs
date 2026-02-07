@@ -1458,9 +1458,21 @@ impl Copy for AtomView<'_> {}
 
 impl Eq for AtomView<'_> {}
 
-impl PartialOrd for AtomView<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl<'a, T> PartialEq<T> for AtomView<'a>
+where
+    for<'b> &'b T: Into<AtomOrView<'a>>,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.get_data() == other.into().as_view().get_data()
+    }
+}
+
+impl<'a, T> PartialOrd<T> for AtomView<'a>
+where
+    for<'b> &'b T: Into<AtomOrView<'a>>,
+{
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+        Some(self.cmp(&other.into().as_view()))
     }
 }
 
@@ -1538,26 +1550,20 @@ impl<'a> From<AddView<'a>> for AtomView<'a> {
 #[derive(Clone, Debug)]
 pub enum AtomOrView<'a> {
     Atom(Atom),
+    InlineVar(InlineVar),
     View(AtomView<'a>),
 }
 
 impl std::fmt::Display for AtomOrView<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AtomOrView::Atom(a) => a.fmt(f),
-            AtomOrView::View(a) => a.fmt(f),
-        }
+        self.as_view().fmt(f)
     }
 }
 
 impl PartialEq for AtomOrView<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (AtomOrView::Atom(a), AtomOrView::Atom(b)) => a == b,
-            (AtomOrView::View(a), AtomOrView::View(b)) => a == b,
-            _ => self.as_view() == other.as_view(),
-        }
+        self.as_view().eq(&other.as_view())
     }
 }
 
@@ -1571,22 +1577,14 @@ impl PartialOrd for AtomOrView<'_> {
 
 impl Ord for AtomOrView<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (AtomOrView::Atom(a1), AtomOrView::Atom(a2)) => a1.as_view().cmp(&a2.as_view()),
-            (AtomOrView::Atom(a1), AtomOrView::View(a2)) => a1.as_view().cmp(a2),
-            (AtomOrView::View(a1), AtomOrView::Atom(a2)) => a1.cmp(&a2.as_view()),
-            (AtomOrView::View(a1), AtomOrView::View(a2)) => a1.cmp(a2),
-        }
+        self.as_view().cmp(&other.as_view())
     }
 }
 
 impl Hash for AtomOrView<'_> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            AtomOrView::Atom(a) => a.as_view().hash(state),
-            AtomOrView::View(a) => a.hash(state),
-        }
+        self.as_view().hash(state)
     }
 }
 
@@ -1601,13 +1599,13 @@ where
 
 impl<'a> From<Symbol> for AtomOrView<'a> {
     fn from(s: Symbol) -> AtomOrView<'a> {
-        AtomOrView::Atom(Atom::var(s))
+        AtomOrView::InlineVar(InlineVar::new(s))
     }
 }
 
 impl<'a> From<&'a Symbol> for AtomOrView<'a> {
     fn from(s: &'a Symbol) -> AtomOrView<'a> {
-        AtomOrView::Atom(Atom::var(*s))
+        (*s).into()
     }
 }
 
@@ -1620,6 +1618,18 @@ impl<'a> From<Atom> for AtomOrView<'a> {
 impl<'a> From<&'a Atom> for AtomOrView<'a> {
     fn from(a: &'a Atom) -> AtomOrView<'a> {
         AtomOrView::View(a.as_view())
+    }
+}
+
+impl<'a> From<InlineVar> for AtomOrView<'a> {
+    fn from(a: InlineVar) -> AtomOrView<'a> {
+        AtomOrView::InlineVar(a)
+    }
+}
+
+impl<'a> From<&'a InlineVar> for AtomOrView<'a> {
+    fn from(a: &'a InlineVar) -> AtomOrView<'a> {
+        AtomOrView::InlineVar(*a)
     }
 }
 
@@ -1639,13 +1649,16 @@ impl<'a> AtomOrView<'a> {
     pub fn into_owned(self) -> Atom {
         match self {
             AtomOrView::Atom(a) => a,
+            AtomOrView::InlineVar(v) => Atom::var(v.get_symbol()),
             AtomOrView::View(a) => a.to_owned(),
         }
     }
 
+    #[inline(always)]
     pub fn as_view(&'a self) -> AtomView<'a> {
         match self {
             AtomOrView::Atom(a) => a.as_view(),
+            AtomOrView::InlineVar(v) => v.as_view(),
             AtomOrView::View(a) => *a,
         }
     }
@@ -1653,6 +1666,15 @@ impl<'a> AtomOrView<'a> {
     pub fn as_mut(&mut self) -> &mut Atom {
         match self {
             AtomOrView::Atom(a) => a,
+            AtomOrView::InlineVar(v) => {
+                let mut oa = Atom::default();
+                oa.set_from_view(&v.as_view());
+                *self = AtomOrView::Atom(oa);
+                match self {
+                    AtomOrView::Atom(a) => a,
+                    _ => unreachable!(),
+                }
+            }
             AtomOrView::View(a) => {
                 let mut oa = Atom::default();
                 oa.set_from_view(a);
@@ -1961,13 +1983,6 @@ impl From<Fun> for Atom {
     }
 }
 
-impl PartialEq for Atom {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.as_view() == other.as_view()
-    }
-}
-
 impl Eq for Atom {}
 
 impl Hash for Atom {
@@ -1977,27 +1992,27 @@ impl Hash for Atom {
     }
 }
 
-impl PartialOrd for Atom {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl Ord for Atom {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_view().cmp(&other.as_view())
     }
 }
 
-impl<T: Into<Coefficient> + Clone> PartialEq<T> for Atom {
+impl<T> PartialEq<T> for Atom
+where
+    for<'a> &'a T: Into<AtomOrView<'a>>,
+{
     fn eq(&self, other: &T) -> bool {
-        *self == Atom::num(other.clone())
+        self.as_view() == other.into().as_view()
     }
 }
 
-impl<T: Into<Coefficient> + Clone> PartialOrd<T> for Atom {
+impl<T> PartialOrd<T> for Atom
+where
+    for<'a> &'a T: Into<AtomOrView<'a>>,
+{
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
-        Some(self.cmp(&Atom::num(other.clone().into())))
+        Some(self.as_view().cmp(&other.into().as_view()))
     }
 }
 
@@ -2245,6 +2260,32 @@ impl FunctionBuilder {
         FunctionBuilder { handle: a }
     }
 
+    /// Create a new `FunctionBuilder` from a variable or function. For other input, this function will panic.
+    ///
+    /// ```
+    /// # use symbolica::{atom::{Atom, AtomCore, FunctionBuilder}, parse};
+    /// let f_id = parse!("f(1,2)");
+    /// let fb = FunctionBuilder::from_atom(parse!("f(1,2)")).add_arg(3).finish();
+    /// assert_eq!(fb, parse!("f(1,2,3)"));
+    /// ```
+    pub fn from_atom<'a, T: Into<AtomOrView<'a>>>(atom: T) -> FunctionBuilder {
+        Self::try_from_atom(atom).unwrap()
+    }
+
+    /// Try to create a new `FunctionBuilder` from an atom that is a variable or function, otherwise return an error.
+    pub fn try_from_atom<'a, T: Into<AtomOrView<'a>>>(atom: T) -> Result<FunctionBuilder, String> {
+        let a = atom.into();
+        if let AtomView::Fun(_) = a.as_view() {
+            Ok(FunctionBuilder {
+                handle: a.into_owned().into(),
+            })
+        } else if let AtomView::Var(v) = a.as_view() {
+            Ok(FunctionBuilder::new(v.get_symbol()))
+        } else {
+            Err("Atom must be a function or variable".to_string())
+        }
+    }
+
     /// Add an argument to the function.
     pub fn add_arg<'a, T: Into<AtomOrView<'a>>>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
@@ -2336,16 +2377,24 @@ impl<T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// let f_id = symbol!("f");
 /// let f = function!(symbol!("f"), 3, parse!("x"));
 /// ```
+///
+/// Extend a function:
+///
+/// ```
+/// use symbolica::{atom::Atom, atom::Symbol, function, symbol, parse};
+/// let f = function!(parse!("f(1,2,3)"), 4);
+/// assert_eq!(f, parse!("f(1,2,3,4)"));
+/// ```
 #[macro_export]
 macro_rules! function {
     ($name: expr) => {
         {
-            $crate::atom::FunctionBuilder::new($name).finish()
+            $crate::atom::FunctionBuilder::from_atom($name).finish()
         }
     };
     ($name: expr, $($id: expr),*) => {
         {
-            let mut f = $crate::atom::FunctionBuilder::new($name);
+            let mut f = $crate::atom::FunctionBuilder::from_atom($name);
             $(
                 f = $crate::atom::FunctionArgument::add_arg_to_function_builder(&$id, f);
             )+
@@ -2918,36 +2967,16 @@ macro_rules! try_parse_lit {
 
 impl Atom {
     /// Take the `self` to a numerical power `exp`
+    #[deprecated(
+        since = "1.4.0",
+        note = "Use Atom::pow() instead with a numerical argument for the exponent."
+    )]
     pub fn npow<T: Into<Coefficient>>(&self, exp: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let n = ws.new_num(exp);
             let mut t = ws.new_atom();
             self.as_view()
                 .pow_no_norm(ws, n.as_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            t.into_inner()
-        })
-    }
-
-    /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
-    pub fn pow<T: AtomCore>(&self, exp: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view()
-                .pow_no_norm(ws, exp.as_atom_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            t.into_inner()
-        })
-    }
-
-    /// Take `base` to the power `self`.
-    pub fn rpow<T: AtomCore>(&self, base: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            base.as_atom_view()
-                .pow_no_norm(ws, self.as_view())
                 .as_view()
                 .normalize(ws, &mut t);
             t.into_inner()
@@ -3031,10 +3060,17 @@ mod test {
 
         let f1 = function!(f1_id, v1, v2, Atom::num(2));
 
-        let r = (-(&v2 + &v1 + 2) * &v2 * 6).npow(5) / &v2.pow(&v1) * &f1 / 4;
+        let r = (-(&v2 + &v1 + 2) * &v2 * 6).pow(5) / &v2.pow(&v1) * &f1 / 4;
 
         let res = parse!("1/4*(v2^v1)^-1*(-6*v2*(v1+v2+2))^5*f1(v1,v2,2)");
         assert_eq!(res, r);
+    }
+
+    #[test]
+    fn pow() {
+        let x = parse!("x");
+        let res = parse!("x^x");
+        assert_eq!(res, x.pow(symbol!("x")));
     }
 
     #[test]

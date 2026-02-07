@@ -92,6 +92,12 @@ pub enum Coefficient {
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
 }
 
+impl From<&Coefficient> for Coefficient {
+    fn from(value: &Coefficient) -> Self {
+        value.clone()
+    }
+}
+
 impl Coefficient {
     /// Construct positive infinity.
     pub fn positive_infinity() -> Self {

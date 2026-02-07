@@ -5094,7 +5094,7 @@ impl PythonExpression {
 
                 Ok(PythonPatternRestriction {
                     condition: name
-                        .filter(move |m| match m {
+                        .filter_match(move |m| match m {
                             Match::Single(v) => v.get_symbol().map(|s| f(s)).unwrap_or(false),
                             Match::Multiple(_, _) => false,
                             Match::FunctionName(n) => f(*n),

@@ -120,6 +120,31 @@ pub trait AtomCore: private::Sealed {
         }
     }
 
+    /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
+    fn pow<'a, T: Into<AtomOrView<'a>>>(&self, exp: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_atom_view()
+                .pow_no_norm(ws, exp.into().as_atom_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            t.into_inner()
+        })
+    }
+
+    /// Take `base` to the power `self`.
+    fn rpow<'a, T: Into<AtomOrView<'a>>>(&self, base: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            base.into()
+                .as_atom_view()
+                .pow_no_norm(ws, self.as_atom_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            t.into_inner()
+        })
+    }
+
     /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
     ///
     /// ```math
@@ -140,9 +165,9 @@ pub trait AtomCore: private::Sealed {
     /// let collected = expr.collect::<u8>(x, None, None);
     /// assert_eq!(collected, parse!("x * (1 + y) + x^2"));
     /// ```
-    fn collect<E: Exponent>(
+    fn collect<'a, E: Exponent>(
         &self,
-        x: impl AtomCore,
+        x: impl Into<AtomOrView<'a>>,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
@@ -249,10 +274,10 @@ pub trait AtomCore: private::Sealed {
     /// let r = parse!("1+y");
     /// assert_eq!(coeff, coeff);
     /// ```
-    fn coefficient<T: AtomCore>(&self, x: T) -> Atom {
+    fn coefficient<'a, T: Into<AtomOrView<'a>>>(&self, x: T) -> Atom {
         Workspace::get_local().with(|ws| {
             self.as_atom_view()
-                .coefficient_with_ws(x.as_atom_view(), ws)
+                .coefficient_with_ws(x.into().as_atom_view(), ws)
         })
     }
 
@@ -397,8 +422,8 @@ pub trait AtomCore: private::Sealed {
     /// let r = parse!("x^2 + 2 * x + 1");
     /// assert_eq!(expanded, r);
     /// ```
-    fn expand_in<T: AtomCore>(&self, var: T) -> Atom {
-        self.as_atom_view().expand_in(var.as_atom_view())
+    fn expand_in<'a, T: Into<AtomOrView<'a>>>(&self, var: T) -> Atom {
+        self.as_atom_view().expand_in(var.into().as_atom_view())
     }
 
     /// Expand an expression in the variable `var`.
@@ -1428,8 +1453,8 @@ pub trait AtomCore: private::Sealed {
     /// let contains_x = expr.contains(x);
     /// assert!(contains_x);
     /// ```
-    fn contains<T: AtomCore>(&self, s: T) -> bool {
-        self.as_atom_view().contains(s.as_atom_view())
+    fn contains<'a, T: Into<AtomOrView<'a>>>(&self, s: T) -> bool {
+        self.as_atom_view().contains(s.into().as_atom_view())
     }
 
     /// Returns true iff `self` is scalar, i.e. contains only numbers and symbols with the `Scalar` attribute.
