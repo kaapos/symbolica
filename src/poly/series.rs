@@ -1033,7 +1033,7 @@ impl Series<AtomField> {
         }
 
         // construct the log argument, which may contain x
-        let c = (self.variable.to_atom() - &self.expansion_point).npow(self.get_exponent(0))
+        let c = (self.variable.to_atom() - &self.expansion_point).pow(self.get_exponent(0))
             * &self.coefficients[0];
         // normalize the series to 1 + ..
         let p = self
@@ -1226,7 +1226,7 @@ impl Series<AtomField> {
         let shift = p.numerator().to_i64().unwrap() as isize
             * (r.ramification / p.denominator().to_i64().unwrap() as usize) as isize;
 
-        Ok(r.mul_coeff(&c.npow(pow)).mul_exp_units(shift))
+        Ok(r.mul_coeff(&c.pow(pow)).mul_exp_units(shift))
     }
 
     pub fn to_atom(&self) -> Atom {
@@ -1246,7 +1246,7 @@ impl Series<AtomField> {
         for (e, c) in self.coefficients.iter().enumerate() {
             let p = self.get_exponent(e);
             if !c.is_zero() {
-                *out = &*out + &(v.npow(p) * c);
+                *out = &*out + &(v.pow(p) * c);
             }
         }
     }

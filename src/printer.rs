@@ -6,8 +6,8 @@ use colored::Colorize;
 
 use crate::{
     atom::{
-        AddView, Atom, AtomView, FunctionBuilder, MulView, NumView, PowView, Symbol, VarView,
-        representation::FunView,
+        AddView, Atom, AtomCore, AtomView, FunctionBuilder, MulView, NumView, PowView, Symbol,
+        VarView, representation::FunView,
     },
     coefficient::CoefficientView,
     domains::{SelfRing, finite_field::FiniteFieldCore, float::Complex, rational::Rational},

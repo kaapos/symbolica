@@ -22,13 +22,13 @@ impl<'a> AtomView<'a> {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub(crate) fn collect<E: Exponent, T: AtomCore>(
+    pub(crate) fn collect<'b, E: Exponent, T: Into<AtomOrView<'b>>>(
         &self,
         x: T,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        self.collect_multiple::<E, T>(std::slice::from_ref(&x), key_map, coeff_map)
+        self.collect_multiple::<E, _>(std::slice::from_ref(&x.into()), key_map, coeff_map)
     }
 
     pub(crate) fn collect_symbol<E: Exponent>(
@@ -1125,7 +1125,7 @@ mod test {
         let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3");
         let x = symbol!("v1");
 
-        let out = input.collect::<i8>(InlineVar::new(x), None, None);
+        let out = input.collect::<i8>(x, None, None);
 
         let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2");
         assert_eq!(out, ref_out)

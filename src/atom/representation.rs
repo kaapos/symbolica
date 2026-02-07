@@ -345,6 +345,10 @@ impl InlineVar {
         InlineVar { data, size }
     }
 
+    pub fn get_symbol(&self) -> Symbol {
+        self.as_var_view().get_symbol()
+    }
+
     pub fn get_data(&self) -> &[u8] {
         &self.data[..self.size as usize]
     }
@@ -2052,13 +2056,6 @@ impl<'a> AtomView<'a> {
                 }
             }
         }
-    }
-}
-
-impl PartialEq<AtomView<'_>> for AtomView<'_> {
-    #[inline(always)]
-    fn eq(&self, other: &AtomView) -> bool {
-        self.get_data() == other.get_data()
     }
 }
 

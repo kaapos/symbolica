@@ -220,7 +220,7 @@ impl Ring for AtomField {
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        self.normalize(b.npow(Integer::from(e)))
+        self.normalize(b.pow(e))
     }
 
     /// Check if the result could be 0 using a statistical method.
