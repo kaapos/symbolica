@@ -300,6 +300,13 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
         self.settings.level_is_tree_depth = level_is_tree_depth;
         self
     }
+
+    /// If true, the pattern may match a subexpression. If false, it must match the entire expression.
+    pub fn partial(mut self, partial: bool) -> Self {
+        self.settings.partial = partial;
+        self
+    }
+
     /// Allow wildcards on the right-hand side that do not appear in the pattern.
     pub fn allow_new_wildcards_on_rhs(mut self, allow: bool) -> Self {
         self.settings.allow_new_wildcards_on_rhs = allow;
@@ -1385,6 +1392,10 @@ impl<'a> AtomView<'a> {
             }
 
             let settings = r.settings.unwrap_or(&DEFAULT_MATCH_SETTINGS);
+
+            if !settings.partial && tree_level > 0 {
+                continue;
+            }
 
             if let Some(max_level) = settings.level_range.1
                 && (settings.level_is_tree_depth && tree_level > max_level
@@ -3458,6 +3469,8 @@ pub struct MatchSettings {
     pub level_range: (usize, Option<usize>),
     /// Determine whether a level reflects the expression tree depth or the function depth.
     pub level_is_tree_depth: bool,
+    /// If true, the pattern may match a subexpression. If false, it must match the entire expression.
+    pub partial: bool,
     /// Allow wildcards on the right-hand side that do not appear in the pattern.
     pub allow_new_wildcards_on_rhs: bool,
     /// The maximum size of the cache for the right-hand side of a replacement.
@@ -3473,6 +3486,7 @@ impl MatchSettings {
             non_greedy_wildcards: Vec::new(),
             level_range: (0, None),
             level_is_tree_depth: false,
+            partial: true,
             allow_new_wildcards_on_rhs: false,
             rhs_cache_size: 0,
         }
@@ -3484,6 +3498,7 @@ impl MatchSettings {
             non_greedy_wildcards: Vec::new(),
             level_range: (0, None),
             level_is_tree_depth: false,
+            partial: true,
             allow_new_wildcards_on_rhs: false,
             rhs_cache_size: 100,
         }
@@ -4049,7 +4064,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
 
         self.initialized = shortcut_done;
         self.processed_iterators = 0;
-        self.complete = false;
+        self.complete = !match_stack.settings.partial;
         self.ordered_gapless = false;
         self.cyclic = false;
         self.do_not_match_to_single_atom_in_list = do_not_match_to_single_atom_in_list;
@@ -4886,6 +4901,10 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
                 });
             }
 
+            if !self.match_stack.settings.partial {
+                return None;
+            }
+
             if let Some(cur_target) = self.atom_tree_iterator.next_into(Some(&mut self.tree_pos)) {
                 self.pattern_iter.set_new_target(cur_target);
             } else {
@@ -5120,6 +5139,19 @@ mod test {
         printer::PrintOptions,
         symbol,
     };
+
+    #[test]
+    fn complete_match() {
+        let input = parse!("f(1)*f(2)");
+        let pat = input.replace(parse!("f(x_)")).partial(false);
+        let mut it = pat.match_iter();
+        assert_eq!(it.next(), None);
+
+        let pat = input.replace(parse!("f(x_)*f(y_)")).partial(false);
+        let mut it = pat.iter(parse!("g(x_,y_)"));
+        assert_eq!(it.next(), Some(parse!("g(1,2)")));
+        assert_eq!(it.next(), Some(parse!("g(2,1)")));
+    }
 
     #[test]
     fn atom_tree_iterator() {
