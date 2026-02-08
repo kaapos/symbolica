@@ -479,78 +479,82 @@ impl State {
                     let mut diff_attr = String::new();
                     if r.is_antisymmetric() != new_id.is_antisymmetric() {
                         diff_attr.push_str(&format!(
-                            "\tAntisymmetric: {} vs {}\n",
+                            "\t- antisymmetric: {} vs {}\n",
                             r.is_antisymmetric(),
                             new_id.is_antisymmetric()
                         ));
                     }
                     if r.is_symmetric() != new_id.is_symmetric() {
                         diff_attr.push_str(&format!(
-                            "\tSymmetric: {} vs {}\n",
+                            "\t- symmetric: {} vs {}\n",
                             r.is_symmetric(),
                             new_id.is_symmetric()
                         ));
                     }
                     if r.is_cyclesymmetric() != new_id.is_cyclesymmetric() {
                         diff_attr.push_str(&format!(
-                            "\tCyclesymmetric: {} vs {}\n",
+                            "\t- cyclesymmetric: {} vs {}\n",
                             r.is_cyclesymmetric(),
                             new_id.is_cyclesymmetric()
                         ));
                     }
                     if r.is_linear() != new_id.is_linear() {
                         diff_attr.push_str(&format!(
-                            "\tLinear: {} vs {}\n",
+                            "\t- linear: {} vs {}\n",
                             r.is_linear(),
                             new_id.is_linear()
                         ));
                     }
                     if r.is_scalar() != new_id.is_scalar() {
                         diff_attr.push_str(&format!(
-                            "\tScalar: {} vs {}\n",
+                            "\t- scalar: {} vs {}\n",
                             r.is_scalar(),
                             new_id.is_scalar()
                         ));
                     }
                     if r.is_real() != new_id.is_real() {
                         diff_attr.push_str(&format!(
-                            "\tReal: {} vs {}\n",
+                            "\t- real: {} vs {}\n",
                             r.is_real(),
                             new_id.is_real()
                         ));
                     }
                     if r.is_integer() != new_id.is_integer() {
                         diff_attr.push_str(&format!(
-                            "\tInteger: {} vs {}\n",
+                            "\t- integer: {} vs {}\n",
                             r.is_integer(),
                             new_id.is_integer()
                         ));
                     }
                     if r.is_positive() != new_id.is_positive() {
                         diff_attr.push_str(&format!(
-                            "\tPositive: {} vs {}\n",
+                            "\t- positive: {} vs {}\n",
                             r.is_positive(),
                             new_id.is_positive()
                         ));
                     }
 
                     if tags != r.get_tags() {
-                        diff_attr.push_str(&format!("\tTags: {:?} vs {:?}\n", r.get_tags(), tags));
+                        diff_attr.push_str(&format!(
+                            "\t- tags: {:?} vs {:?}\n",
+                            r.get_tags(),
+                            tags
+                        ));
                     }
 
                     if normalization_function.is_some() {
-                        diff_attr.push_str("\tNew normalization function specified.\n");
+                        diff_attr.push_str("\t- new normalization function specified.\n");
                     }
                     if print_function.is_some() {
-                        diff_attr.push_str("\tNew print function specified.\n");
+                        diff_attr.push_str("\t- new print function specified.\n");
                     }
                     if derivative_function.is_some() {
-                        diff_attr.push_str("\tNew derivative function specified.\n");
+                        diff_attr.push_str("\t- new derivative function specified.\n");
                     }
 
                     if user_data.as_ref().unwrap_or(&UserData::None) != &data.user_data {
                         diff_attr.push_str(&format!(
-                            "\tNew user data specified: {:?} vs {:?}\n",
+                            "\t- new user data specified: {:?} vs {:?}\n",
                             data.user_data, user_data
                         ));
                     }
@@ -562,7 +566,7 @@ impl State {
                         )
                         .into())
                     } else {
-                        Err(format!("Symbol {} redefined with new attributes: {}The first definition occurred here: {}:{}.", data.name, diff_attr, data.file, data.line).into())
+                        Err(format!("Symbol {} redefined with new attributes:\n{}\nThe first definition occurred here: {}:{}.", data.name, diff_attr, data.file, data.line).into())
                     }
                 }
             }

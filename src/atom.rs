@@ -2545,10 +2545,10 @@ macro_rules! tag {
 #[macro_export]
 macro_rules! symbol {
     ($id: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap()
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap_or_else(|e| panic!("{}", e))
     };
     ($id: expr; $($attr: ident),*) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]).build().unwrap()
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]).build().unwrap_or_else(|e| panic!("{}", e))
     };
     ($id: expr, $($a: tt = $value: expr),*) => {
         {
@@ -2558,7 +2558,7 @@ macro_rules! symbol {
                 b = $crate::symbol_set_attr!(b, $a = $value);
             )+
 
-            b.build().unwrap()
+            b.build().unwrap_or_else(|e| panic!("{}", e))
         }
     };
     ($id: expr; $($attr: ident),+; $($a: ident = $value: expr),*) => {
@@ -2569,14 +2569,14 @@ macro_rules! symbol {
                 b = $crate::symbol_set_attr!(b, $a = $value);
             )+
 
-            b.build().unwrap()
+            b.build().unwrap_or_else(|e| panic!("{}", e))
         }
     };
     ($($id: expr),*) => {
         {
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2585,7 +2585,7 @@ macro_rules! symbol {
         {
                 (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags(std::slice::from_ref(&$tag)).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags(std::slice::from_ref(&$tag)).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2594,7 +2594,7 @@ macro_rules! symbol {
         {
                 (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags($tags).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags($tags).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2609,7 +2609,7 @@ macro_rules! symbol {
 
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2624,7 +2624,7 @@ macro_rules! symbol {
 
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags(std::slice::from_ref(&$tag)).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags(std::slice::from_ref(&$tag)).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2639,7 +2639,7 @@ macro_rules! symbol {
 
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags($tags).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags($tags).build().unwrap_or_else(|e| panic!("{}", e)),
                 )+
             )
         }
@@ -2877,7 +2877,7 @@ macro_rules! try_symbol_group {
 #[macro_export]
 macro_rules! parse {
     ($($all_args:tt)*) => {
-        $crate::try_parse!($($all_args)*).unwrap()
+        $crate::try_parse!($($all_args)*).unwrap_or_else(|e| panic!("{}", e))
     };
 }
 
@@ -2937,14 +2937,14 @@ macro_rules! parse_lit {
             $crate::wrap_input!(stringify!($s)),
             $crate::parser::ParseSettings::symbolica(),
         )
-        .unwrap()
+        .unwrap_or_else(|e| panic!("{}", e))
     }};
     ($s: expr, default_namespace = $ns: expr) => {{
         $crate::atom::Atom::parse(
             $crate::with_default_namespace!(stringify!($s), $ns),
             $crate::parser::ParseSettings::symbolica(),
         )
-        .unwrap()
+        .unwrap_or_else(|e| panic!("{}", e))
     }};
 }
 

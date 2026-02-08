@@ -1637,20 +1637,24 @@ impl PythonHeldExpression {
 
     /// Create a transformer that tests whether the pattern is found in the expression.
     /// Restrictions on the pattern can be supplied through `cond`.
-    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(signature = (lhs, cond = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false))]
     pub fn matches(
         &self,
         lhs: ConvertibleToPattern,
         cond: Option<ConvertibleToPatternRestriction>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
     ) -> PyResult<PythonCondition> {
         let conditions = cond.map(|r| r.0).unwrap_or_default();
         let settings = MatchSettings {
-            level_range: level_range.unwrap_or((0, None)),
-            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
-            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            level_range: level_range.unwrap_or((min_level, max_level)),
+            level_is_tree_depth,
+            allow_new_wildcards_on_rhs,
+            partial,
             ..MatchSettings::default()
         };
 
@@ -1913,20 +1917,24 @@ impl PythonTransformer {
 
     /// Create a transformer that tests whether the pattern is found in the expression.
     /// Restrictions on the pattern can be supplied through `cond`.
-    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(signature = (lhs, cond = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false))]
     pub fn matches(
         &self,
         lhs: ConvertibleToOpenPattern,
         cond: Option<ConvertibleToPatternRestriction>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
     ) -> PyResult<PythonCondition> {
         let conditions = cond.map(|r| r.0).unwrap_or_default();
         let settings = MatchSettings {
-            level_range: level_range.unwrap_or((0, None)),
-            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
-            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            level_range: level_range.unwrap_or((min_level, max_level)),
+            level_is_tree_depth,
+            allow_new_wildcards_on_rhs,
+            partial,
             ..MatchSettings::default()
         };
 
@@ -2822,16 +2830,19 @@ impl PythonTransformer {
     /// rhs_cache_size: int, optional
     ///     Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
     ///     **Warning**: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
-    #[pyo3(signature = (lhs, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None, once = false))]
+    #[pyo3(signature = (lhs, rhs, cond = None, non_greedy_wildcards = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false, rhs_cache_size = None, once = false))]
     pub fn replace(
         &self,
         lhs: ConvertibleToExpression,
         rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
         rhs_cache_size: Option<usize>,
         once: bool,
     ) -> PyResult<PythonTransformer> {
@@ -2856,15 +2867,12 @@ impl PythonTransformer {
                 })
                 .collect::<Result<_, _>>()?;
         }
-        if let Some(level_range) = level_range {
-            settings.level_range = level_range;
-        }
-        if let Some(level_is_tree_depth) = level_is_tree_depth {
-            settings.level_is_tree_depth = level_is_tree_depth;
-        }
-        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
-            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
-        }
+
+        settings.level_range = level_range.unwrap_or((min_level, max_level));
+        settings.partial = partial;
+        settings.level_is_tree_depth = level_is_tree_depth;
+        settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+
         if let Some(rhs_cache_size) = rhs_cache_size {
             settings.rhs_cache_size = rhs_cache_size;
         }
@@ -6293,20 +6301,24 @@ impl PythonExpression {
     /// >>> for match in e.match(f(x_)):
     /// >>>    for map in match:
     /// >>>        print(map[0],'=', map[1])
-    #[pyo3(name = "match", signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(name = "match", signature = (lhs, cond = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false))]
     pub fn pattern_match(
         &self,
         lhs: ConvertibleToExpression,
         cond: Option<ConvertibleToPatternRestriction>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond.map(|r| r.0).unwrap_or_default();
         let settings = MatchSettings {
-            level_range: level_range.unwrap_or((0, None)),
-            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
-            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            level_range: level_range.unwrap_or((min_level, max_level)),
+            level_is_tree_depth,
+            allow_new_wildcards_on_rhs,
+            partial,
             ..MatchSettings::default()
         };
         Ok(PythonMatchIterator::new(
@@ -6331,20 +6343,24 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> if f(1).matches(f(2)):
     /// >>>    print('match')
-    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(signature = (lhs, cond = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false))]
     pub fn matches(
         &self,
         lhs: ConvertibleToExpression,
         cond: Option<ConvertibleToPatternRestriction>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
     ) -> PyResult<PythonCondition> {
         let conditions = cond.map(|r| r.0).unwrap_or_default();
         let settings = MatchSettings {
-            level_range: level_range.unwrap_or((0, None)),
-            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
-            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            level_range: level_range.unwrap_or((min_level, max_level)),
+            level_is_tree_depth,
+            allow_new_wildcards_on_rhs,
+            partial,
             ..MatchSettings::default()
         };
 
@@ -6381,21 +6397,25 @@ impl PythonExpression {
     /// f(1)*f(3)*f(3)
     /// f(1)*f(2)*f(4)
     /// ```
-    #[pyo3(signature = (lhs, rhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(signature = (lhs, rhs, cond = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false))]
     pub fn replace_iter(
         &self,
         lhs: ConvertibleToExpression,
         rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond.map(|r| r.0.clone()).unwrap_or_default();
         let settings = MatchSettings {
-            level_range: level_range.unwrap_or((0, None)),
-            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
-            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            level_range: level_range.unwrap_or((min_level, max_level)),
+            level_is_tree_depth,
+            allow_new_wildcards_on_rhs,
+            partial,
             ..MatchSettings::default()
         };
 
@@ -6445,6 +6465,10 @@ impl PythonExpression {
     ///     The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
     /// cond: Optional[PatternRestriction]
     ///     Conditions on the pattern.
+    /// min_level: int, optional
+    ///     The minimum level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+    /// max_level: int, optional
+    ///     The maximum level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
     /// level_range: (int, int), optional
     ///     Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
     /// level_is_tree_depth: bool, optional
@@ -6456,16 +6480,19 @@ impl PythonExpression {
     ///      Warning: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
-    #[pyo3(signature = (pattern, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None, repeat = false, once = false))]
+    #[pyo3(signature = (pattern, rhs, cond = None, non_greedy_wildcards = None, min_level=0, max_level=None, level_range = None, level_is_tree_depth = false, partial=true, allow_new_wildcards_on_rhs = false, rhs_cache_size = None, repeat = false, once = false))]
     pub fn replace(
         &self,
         pattern: ConvertibleToExpression,
         rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
         rhs_cache_size: Option<usize>,
         repeat: bool,
         once: bool,
@@ -6494,15 +6521,12 @@ impl PythonExpression {
                 })
                 .collect::<Result<_, _>>()?;
         }
-        if let Some(level_range) = level_range {
-            settings.level_range = level_range;
-        }
-        if let Some(level_is_tree_depth) = level_is_tree_depth {
-            settings.level_is_tree_depth = level_is_tree_depth;
-        }
-        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
-            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
-        }
+
+        settings.level_range = level_range.unwrap_or((min_level, max_level));
+        settings.partial = partial;
+        settings.level_is_tree_depth = level_is_tree_depth;
+        settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+
         if let Some(rhs_cache_size) = rhs_cache_size {
             settings.rhs_cache_size = rhs_cache_size;
         }
@@ -7543,16 +7567,19 @@ pub struct PythonReplacement {
 #[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonReplacement {
-    #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, level_range=None, level_is_tree_depth=None, allow_new_wildcards_on_rhs=None, rhs_cache_size=None))]
+    #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, min_level=0, max_level=None, level_range=None, level_is_tree_depth=false, partial=true, allow_new_wildcards_on_rhs=false, rhs_cache_size=None))]
     #[new]
     pub fn new(
         pattern: ConvertibleToExpression,
         rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        min_level: usize,
+        max_level: Option<usize>,
         level_range: Option<(usize, Option<usize>)>,
-        level_is_tree_depth: Option<bool>,
-        allow_new_wildcards_on_rhs: Option<bool>,
+        level_is_tree_depth: bool,
+        partial: bool,
+        allow_new_wildcards_on_rhs: bool,
         rhs_cache_size: Option<usize>,
     ) -> PyResult<Self> {
         let pattern = pattern.to_expression().expr.to_pattern();
@@ -7579,15 +7606,12 @@ impl PythonReplacement {
                 })
                 .collect::<Result<_, _>>()?;
         }
-        if let Some(level_range) = level_range {
-            settings.level_range = level_range;
-        }
-        if let Some(level_is_tree_depth) = level_is_tree_depth {
-            settings.level_is_tree_depth = level_is_tree_depth;
-        }
-        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
-            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
-        }
+
+        settings.level_range = level_range.unwrap_or((min_level, max_level));
+        settings.partial = partial;
+        settings.level_is_tree_depth = level_is_tree_depth;
+        settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+
         if let Some(rhs_cache_size) = rhs_cache_size {
             settings.rhs_cache_size = rhs_cache_size;
         }

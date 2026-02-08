@@ -1777,9 +1777,12 @@ class Expression:
         self,
         lhs: Expression | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
@@ -1804,9 +1807,12 @@ class Expression:
         self,
         lhs: Expression | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
     ) -> Condition:
         """
         Test whether the pattern is found in the expression.
@@ -1825,9 +1831,12 @@ class Expression:
         lhs: Expression | int | float | complex | Decimal,
         rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
     ) -> ReplaceIterator:
         """
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
@@ -1858,11 +1867,18 @@ class Expression:
             The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
         cond:
             Conditions on the pattern.
+        min_level: int, optional
+            The minimum level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        max_level: Optional[int], optional
+            The maximum level at which the pattern is allowed to match. `None` means no maximum.
         level_range:
             Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
-        level_is_tree_depth:
+            Prefer setting `min_level` and `max_level` directly over `level_range`, as this argument will be deprecated in the future.
+        level_is_tree_depth: bool, optional
             If set to `True`, the level is increased when going one level deeper in the expression tree.
-        allow_new_wildcards_on_rhs:
+        partial: bool, optional
+            If set to `True`, allow the pattern to match to a part of a term. For example, with `partial=True`, the pattern `x+y` matches to `x+2+y`.
+        allow_new_wildcards_on_rhs: bool, optional
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         """
 
@@ -1872,9 +1888,12 @@ class Expression:
         rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
         rhs_cache_size: Optional[int] = None,
         repeat: bool = False,
         once: bool = False,
@@ -1901,14 +1920,21 @@ class Expression:
             The pattern to match.
         rhs:
             The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
-        cond:
+        cond: PatternRestriction | Condition, optional
             Conditions on the pattern.
-        non_greedy_wildcards:
+        non_greedy_wildcards: Sequence[Expression], optional
             Wildcards that try to match as little as possible.
+        min_level: int, optional
+            The minimum level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        max_level: Optional[int], optional
+            The maximum level at which the pattern is allowed to match. `None` means no maximum.
         level_range:
             Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+            Prefer setting `min_level` and `max_level` directly over `level_range`, as this argument will be deprecated in the future.
         level_is_tree_depth: bool, optional
             If set to `True`, the level is increased when going one level deeper in the expression tree.
+        partial: bool, optional
+            If set to `True`, allow the pattern to match to a part of a term. For example, with `partial=True`, the pattern `x+y` matches to `x+2+y`.
         allow_new_wildcards_on_rhs: bool, optional
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         rhs_cache_size: int, optional
@@ -2267,9 +2293,12 @@ class Replacement:
             rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
             cond: Optional[PatternRestriction | Condition] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+            min_level: int = 0,
+            max_level: Optional[int] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
-            level_is_tree_depth: Optional[bool] = False,
-            allow_new_wildcards_on_rhs: Optional[bool] = False,
+            level_is_tree_depth: bool = False,
+            partial: bool = True,
+            allow_new_wildcards_on_rhs: bool = False,
             rhs_cache_size: Optional[int] = None) -> Replacement:
         """Create a new replacement. See `replace` for more information."""
 
@@ -2409,9 +2438,12 @@ class HeldExpression:
         self,
         lhs: Expression | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
     ) -> Condition:
         """
         Create a transformer that tests whether the pattern is found in the expression.
@@ -3012,9 +3044,12 @@ class Transformer:
         rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
         rhs_cache_size: Optional[int] = None,
         once: bool = False,
     ) -> Transformer:
@@ -3040,11 +3075,22 @@ class Transformer:
             Conditions on the pattern.
         non_greedy_wildcards:
             Wildcards that try to match as little as possible.
+        cond: PatternRestriction | Condition, optional
+            Conditions on the pattern.
+        non_greedy_wildcards: Sequence[Expression], optional
+            Wildcards that try to match as little as possible.
+        min_level: int, optional
+            The minimum level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        max_level: Optional[int], optional
+            The maximum level at which the pattern is allowed to match. `None` means no maximum.
         level_range:
             Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
-        level_is_tree_depth:
+            Prefer setting `min_level` and `max_level` directly over `level_range`, as this argument will be deprecated in the future.
+        level_is_tree_depth: bool, optional
             If set to `True`, the level is increased when going one level deeper in the expression tree.
-        allow_new_wildcards_on_rhs:
+        partial: bool, optional
+            If set to `True`, allow the pattern to match to a part of a term. For example, with `partial=True`, the pattern `x+y` matches to `x+2+y`.
+        allow_new_wildcards_on_rhs: bool, optional
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         rhs_cache_size: int, optional
             Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
@@ -3164,9 +3210,12 @@ class Transformer:
         self,
         lhs: HeldExpression | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
+        min_level: int = 0,
+        max_level: Optional[int] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
+        level_is_tree_depth: bool = False,
+        partial: bool = True,
+        allow_new_wildcards_on_rhs: bool = False,
     ) -> Condition:
         """
         Create a transformer that tests whether the pattern is found in the expression.
