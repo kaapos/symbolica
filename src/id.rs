@@ -519,6 +519,21 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
     }
 }
 
+impl<'a: 'b, 'b> IntoIterator for &'a ReplaceBuilder<'a, 'b> {
+    type Item = HashMap<Symbol, Atom>;
+    type IntoIter = PatternAtomTreeIterator<'a, 'b>;
+
+    /// Create an iterator over all matches of the pattern in the target, without performing any replacements.
+    fn into_iter(self) -> Self::IntoIter {
+        PatternAtomTreeIterator::new(
+            &self.pattern,
+            self.target,
+            self.conditions.as_ref().map(|x| x.borrow()),
+            Some(&self.settings),
+        )
+    }
+}
+
 impl From<Atom> for BorrowedOrOwned<'_, Pattern> {
     fn from(atom: Atom) -> Self {
         Pattern::from(atom).into()
