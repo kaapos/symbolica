@@ -3044,7 +3044,7 @@ macro_rules! simd_impl {
 
             #[inline(always)]
             fn neg(&self) -> Self {
-                -self
+                -*self
             }
 
             #[inline(always)]

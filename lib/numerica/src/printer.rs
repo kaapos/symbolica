@@ -37,13 +37,16 @@ pub struct PrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
     pub color_builtin_symbols: bool,
+    pub bracket_level_colors: Option<[u8; 16]>,
     pub print_ring: bool,
     pub symmetric_representation_for_finite_field: bool,
     pub explicit_rational_polynomial: bool,
     pub number_thousands_separator: Option<char>,
     pub multiplication_operator: char,
     pub double_star_for_exponentiation: bool,
+    #[deprecated(note = "Use function_brackets instead")]
     pub square_brackets_for_function: bool,
+    pub function_brackets: (char, char),
     pub num_exp_as_superscript: bool,
     pub precision: Option<usize>,
     pub pretty_matrix: bool,
@@ -64,13 +67,18 @@ impl PrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: true,
             color_builtin_symbols: true,
+            bracket_level_colors: Some([
+                244, 25, 97, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60,
+            ]),
             print_ring: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
             multiplication_operator: '*',
             double_star_for_exponentiation: false,
+            #[allow(deprecated)]
             square_brackets_for_function: false,
+            function_brackets: ('(', ')'),
             num_exp_as_superscript: false,
             mode: PrintMode::Symbolica,
             precision: None,
@@ -96,7 +104,9 @@ impl PrintOptions {
             number_thousands_separator: None,
             multiplication_operator: ' ',
             double_star_for_exponentiation: false,
+            #[allow(deprecated)]
             square_brackets_for_function: true,
+            function_brackets: ('[', ']'),
             num_exp_as_superscript: false,
             mode: PrintMode::Mathematica,
             precision: None,
@@ -106,6 +116,7 @@ impl PrintOptions {
             include_attributes: false,
             color_namespace: false,
             max_terms: None,
+            bracket_level_colors: None,
             custom_print_mode: None,
         }
     }
@@ -122,7 +133,9 @@ impl PrintOptions {
             number_thousands_separator: None,
             multiplication_operator: ' ',
             double_star_for_exponentiation: false,
+            #[allow(deprecated)]
             square_brackets_for_function: false,
+            function_brackets: ('(', ')'),
             num_exp_as_superscript: false,
             mode: PrintMode::Latex,
             precision: None,
@@ -132,6 +145,7 @@ impl PrintOptions {
             include_attributes: false,
             color_namespace: false,
             max_terms: None,
+            bracket_level_colors: None,
             custom_print_mode: None,
         }
     }
@@ -148,7 +162,9 @@ impl PrintOptions {
             number_thousands_separator: None,
             multiplication_operator: '*',
             double_star_for_exponentiation: false,
+            #[allow(deprecated)]
             square_brackets_for_function: false,
+            function_brackets: ('(', ')'),
             num_exp_as_superscript: false,
             mode: PrintMode::Symbolica,
             precision: None,
@@ -158,6 +174,7 @@ impl PrintOptions {
             include_attributes: false,
             color_namespace: false,
             max_terms: None,
+            bracket_level_colors: None,
             custom_print_mode: None,
         }
     }
@@ -243,6 +260,7 @@ pub struct PrintState {
     pub top_level_add_child: bool,
     pub superscript: bool,
     pub level: u16,
+    pub bracket_level: u16,
 }
 
 impl Default for PrintState {
@@ -262,6 +280,7 @@ impl PrintState {
             top_level_add_child: true,
             superscript: false,
             level: 0,
+            bracket_level: 0,
         }
     }
 
@@ -284,6 +303,7 @@ impl PrintState {
             in_exp,
             in_exp_base,
             level: self.level + 1,
+            bracket_level: self.bracket_level,
             ..self
         }
     }

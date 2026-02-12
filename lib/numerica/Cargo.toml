@@ -24,7 +24,7 @@ numpy = { version = "0.27", optional = true }
 rand = "0.9"
 rand_xoshiro = "0.7"
 rug = "1.27.0"
-wide = "0.8"
+wide = "1.1"
 ahash = "0.8.7"
 dyn-clone = "1.0"
 colored = "3.0"
