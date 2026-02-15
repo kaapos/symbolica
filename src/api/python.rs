@@ -300,6 +300,9 @@ fn print_options_to_dict<'py>(
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("mode", PythonPrintMode::from(options.mode))?;
+    dict.set_item("max_line_length", options.max_line_length)?;
+    dict.set_item("indentation", options.indentation)?;
+    dict.set_item("fill_indented_lines", options.fill_indented_lines)?;
     dict.set_item("terms_on_new_line", options.terms_on_new_line)?;
     dict.set_item("color_top_level_sum", options.color_top_level_sum)?;
     dict.set_item("color_builtin_symbols", options.color_builtin_symbols)?;
@@ -2913,6 +2916,9 @@ impl PythonTransformer {
     /// >>> E('f(10)').hold(T().print(terms_on_new_line = True))()
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -2938,6 +2944,9 @@ impl PythonTransformer {
     pub fn print(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -2959,6 +2968,9 @@ impl PythonTransformer {
         custom_print_mode: Option<usize>,
     ) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::Print(PrintOptions {
+            max_line_length,
+            indentation,
+            fill_indented_lines,
             terms_on_new_line,
             color_top_level_sum,
             color_builtin_symbols,
@@ -4188,6 +4200,9 @@ impl PythonExpression {
     /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -4213,6 +4228,9 @@ impl PythonExpression {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -4238,6 +4256,9 @@ impl PythonExpression {
             AtomPrinter::new_with_options(
                 self.expr.as_view(),
                 PrintOptions {
+                    max_line_length,
+                    indentation,
+                    fill_indented_lines,
                     terms_on_new_line,
                     color_top_level_sum,
                     color_builtin_symbols,
@@ -8336,6 +8357,9 @@ impl PythonSeries {
     /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -8361,6 +8385,9 @@ impl PythonSeries {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -8385,6 +8412,9 @@ impl PythonSeries {
             .series
             .format_string(
                 &PrintOptions {
+                    max_line_length,
+                    indentation,
+                    fill_indented_lines,
                     terms_on_new_line,
                     color_top_level_sum,
                     color_builtin_symbols,
@@ -8975,6 +9005,9 @@ impl PythonPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -8998,6 +9031,9 @@ impl PythonPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -9020,6 +9056,9 @@ impl PythonPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -10279,6 +10318,9 @@ impl PythonFiniteFieldPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -10302,6 +10344,9 @@ impl PythonFiniteFieldPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -10324,6 +10369,9 @@ impl PythonFiniteFieldPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -11362,6 +11410,9 @@ impl PythonPrimeTwoPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -11385,6 +11436,9 @@ impl PythonPrimeTwoPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -11407,6 +11461,9 @@ impl PythonPrimeTwoPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -12231,6 +12288,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -12254,6 +12314,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -12276,6 +12339,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -13198,6 +13264,9 @@ impl PythonGaloisFieldPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -13221,6 +13290,9 @@ impl PythonGaloisFieldPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -13243,6 +13315,9 @@ impl PythonGaloisFieldPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -14111,6 +14186,9 @@ impl PythonNumberFieldPolynomial {
     /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
@@ -14134,6 +14212,9 @@ impl PythonNumberFieldPolynomial {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
@@ -14156,6 +14237,9 @@ impl PythonNumberFieldPolynomial {
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
@@ -18037,6 +18121,9 @@ impl PythonMatrix {
     /// Convert the matrix into a human-readable string, with tunable settings.
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
+            max_line_length = Some(80),
+            indentation = 4,
+            fill_indented_lines = true,
             pretty_matrix = true,
             number_thousands_separator = None,
             multiplication_operator = '·',
@@ -18054,6 +18141,9 @@ impl PythonMatrix {
     pub fn format(
         &self,
         mode: PythonPrintMode,
+        max_line_length: Option<usize>,
+        indentation: usize,
+        fill_indented_lines: bool,
         pretty_matrix: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
@@ -18070,6 +18160,9 @@ impl PythonMatrix {
     ) -> PyResult<String> {
         Ok(self.matrix.format_string(
             &PrintOptions {
+                max_line_length,
+                indentation,
+                fill_indented_lines,
                 terms_on_new_line: false,
                 color_top_level_sum: false,
                 color_builtin_symbols: false,
