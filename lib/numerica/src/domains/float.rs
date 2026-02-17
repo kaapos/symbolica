@@ -10,7 +10,10 @@ use std::{
 use rand::Rng;
 use wide::{f64x2, f64x4};
 
-use crate::domains::{RingOps, Set, integer::Integer};
+use crate::{
+    domains::{RingOps, Set, integer::Integer},
+    printer::{self, PrintMode},
+};
 
 use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
@@ -241,8 +244,8 @@ impl<T: SingleFloat + Hash + Eq + InternalOrdering> Ring for FloatField<T> {
     fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        opts: &crate::printer::PrintOptions,
-        state: crate::printer::PrintState,
+        opts: &printer::PrintOptions,
+        state: printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
         if opts.mode.is_mathematica() {
@@ -298,11 +301,11 @@ impl SelfRing for F64 {
     #[inline(always)]
     fn format<W: std::fmt::Write>(
         &self,
-        opts: &crate::printer::PrintOptions,
-        state: crate::printer::PrintState,
+        opts: &printer::PrintOptions,
+        state: printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
-        if opts.mode.is_mathematica() {
+        if opts.mode.is_mathematica() || opts.mode.is_latex() || opts.mode.is_typst() {
             let mut s = String::new();
             if let Some(p) = opts.precision {
                 if state.in_sum {
@@ -316,7 +319,19 @@ impl SelfRing for F64 {
                 s.write_fmt(format_args!("{self}"))?
             }
 
-            f.write_str(&s.replace('e', "*^"))?;
+            if s.contains('e') {
+                match opts.mode {
+                    PrintMode::Mathematica => s = s.replace('e', "*^"),
+                    PrintMode::Latex => s = s.replace('e', "\\cdot 10^{") + "}",
+                    PrintMode::Typst => s = s.replace('e', " dot 10^(") + ")",
+                    _ => {
+                        unreachable!()
+                    }
+                }
+            }
+
+            f.write_str(&s)?;
+
             return Ok(false);
         }
 
@@ -350,11 +365,11 @@ impl SelfRing for Float {
     #[inline(always)]
     fn format<W: std::fmt::Write>(
         &self,
-        opts: &crate::printer::PrintOptions,
-        state: crate::printer::PrintState,
+        opts: &printer::PrintOptions,
+        state: printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
-        if opts.mode.is_mathematica() {
+        if opts.mode.is_mathematica() || opts.mode.is_latex() || opts.mode.is_typst() {
             let mut s = String::new();
             if let Some(p) = opts.precision {
                 if state.in_sum {
@@ -368,7 +383,19 @@ impl SelfRing for Float {
                 s.write_fmt(format_args!("{self}"))?
             }
 
-            f.write_str(&s.replace('e', "*^"))?;
+            if s.contains('e') {
+                match opts.mode {
+                    PrintMode::Mathematica => s = s.replace('e', "*^"),
+                    PrintMode::Latex => s = s.replace('e', "\\cdot 10^{") + "}",
+                    PrintMode::Typst => s = s.replace('e', " dot 10^(") + ")",
+                    _ => {
+                        unreachable!()
+                    }
+                }
+            }
+
+            f.write_str(&s)?;
+
             return Ok(false);
         }
 
@@ -402,8 +429,8 @@ impl SelfRing for Complex<Float> {
     #[inline(always)]
     fn format<W: std::fmt::Write>(
         &self,
-        opts: &crate::printer::PrintOptions,
-        mut state: crate::printer::PrintState,
+        opts: &printer::PrintOptions,
+        mut state: printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
         let re_zero = SingleFloat::is_zero(&self.re);

@@ -10,6 +10,7 @@ pub enum PrintMode {
     Latex,
     Mathematica,
     Sympy,
+    Typst,
 }
 
 impl PrintMode {
@@ -28,33 +29,63 @@ impl PrintMode {
     pub fn is_sympy(&self) -> bool {
         *self == PrintMode::Sympy
     }
+
+    pub fn is_typst(&self) -> bool {
+        *self == PrintMode::Typst
+    }
 }
 
 /// Various options for printing expressions.
 #[derive(Debug, Copy, Clone)]
 pub struct PrintOptions {
+    /// The overall print mode.
     pub mode: PrintMode,
+    /// The maximum line length before splitting into multiple lines. If None, no splitting is done.
+    pub max_line_length: Option<usize>,
+    /// The number of spaces to use for indentation.
+    pub indentation: usize,
+    /// Whether to fill indented lines with as many operator arguments as possible, or whether
+    /// to put each operator argument on a new line.
+    pub fill_indented_lines: bool,
+    /// Whether to put each term of a top-level sum on a new line.
     pub terms_on_new_line: bool,
+    /// Whether to color the top-level `+` and `-`.
     pub color_top_level_sum: bool,
+    /// Whether to color built-in symbols.
     pub color_builtin_symbols: bool,
+    /// Colors for different bracket levels.
     pub bracket_level_colors: Option<[u8; 16]>,
+    /// Whether to print the ring.
     pub print_ring: bool,
+    /// Whether to use a symmetric representation for finite fields.
     pub symmetric_representation_for_finite_field: bool,
+    /// Whether to print rational polynomials in an explicit way or in a Symbolica optimized way.
     pub explicit_rational_polynomial: bool,
+    /// The character to use as a thousands separator in numbers. If None, no separator is used.
     pub number_thousands_separator: Option<char>,
+    /// The character to use for multiplication.
     pub multiplication_operator: char,
+    /// Whether to use `**` for exponentiation (e.g. for sympy) instead of `^`.
     pub double_star_for_exponentiation: bool,
     #[deprecated(note = "Use function_brackets instead")]
     pub square_brackets_for_function: bool,
+    /// The open and close brackets to use for function application.
     pub function_brackets: (char, char),
+    /// Whether to print the exponent of numbers as a superscript.
     pub num_exp_as_superscript: bool,
+    /// The precision of floating point numbers to print. If None, the available precision is used.
     pub precision: Option<usize>,
+    /// Whether to print matrices in a tabular format (e.g. with newlines and indentation).
     pub pretty_matrix: bool,
+    /// The namespace to hide when printing. If None, no namespace is hidden.
     pub hide_namespace: Option<&'static str>,
+    /// Whether to hide all namespaces when printing.
     pub hide_all_namespaces: bool,
     /// Print attribute and tags
     pub include_attributes: bool,
+    /// Whether to color namespaces.
     pub color_namespace: bool,
+    /// The maximum number of terms to print for a top-level sum.
     pub max_terms: Option<usize>,
     /// Provides a handle to set the behavior of the custom print function.
     /// Symbolica does not use this option for its own printing.
@@ -64,6 +95,9 @@ pub struct PrintOptions {
 impl PrintOptions {
     pub const fn new() -> Self {
         Self {
+            max_line_length: None,
+            indentation: 4,
+            fill_indented_lines: true,
             terms_on_new_line: false,
             color_top_level_sum: true,
             color_builtin_symbols: true,
@@ -95,6 +129,9 @@ impl PrintOptions {
     /// Print the output in a Mathematica-readable format.
     pub const fn mathematica() -> PrintOptions {
         Self {
+            max_line_length: None,
+            indentation: 4,
+            fill_indented_lines: true,
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
@@ -124,6 +161,9 @@ impl PrintOptions {
     /// Print the output in a Latex input format.
     pub const fn latex() -> PrintOptions {
         Self {
+            max_line_length: None,
+            indentation: 4,
+            fill_indented_lines: true,
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
@@ -150,9 +190,44 @@ impl PrintOptions {
         }
     }
 
+    /// Print the output in a Typst-readable format.
+    pub const fn typst() -> PrintOptions {
+        Self {
+            max_line_length: None,
+            indentation: 4,
+            fill_indented_lines: true,
+            terms_on_new_line: false,
+            color_top_level_sum: false,
+            color_builtin_symbols: false,
+            print_ring: true,
+            symmetric_representation_for_finite_field: false,
+            explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: ' ',
+            double_star_for_exponentiation: false,
+            #[allow(deprecated)]
+            square_brackets_for_function: false,
+            function_brackets: ('(', ')'),
+            num_exp_as_superscript: false,
+            mode: PrintMode::Typst,
+            precision: None,
+            pretty_matrix: false,
+            hide_namespace: None,
+            hide_all_namespaces: true,
+            include_attributes: false,
+            color_namespace: false,
+            max_terms: None,
+            bracket_level_colors: None,
+            custom_print_mode: None,
+        }
+    }
+
     /// Print the output suitable for a file.
     pub const fn file() -> PrintOptions {
         Self {
+            max_line_length: None,
+            indentation: 4,
+            fill_indented_lines: true,
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
@@ -216,6 +291,7 @@ impl PrintOptions {
         PrintOptions {
             precision: f.precision(),
             hide_all_namespaces: !f.alternate(),
+            max_line_length: f.width(),
             terms_on_new_line: f.align() == Some(std::fmt::Alignment::Right),
             ..Default::default()
         }
@@ -226,6 +302,10 @@ impl PrintOptions {
 
         if f.alternate() {
             self.hide_all_namespaces = false;
+        }
+
+        if let Some(width) = f.width() {
+            self.max_line_length = Some(width);
         }
 
         if let Some(a) = f.align() {
@@ -261,6 +341,7 @@ pub struct PrintState {
     pub superscript: bool,
     pub level: u16,
     pub bracket_level: u16,
+    pub indentation_level: u16,
 }
 
 impl Default for PrintState {
@@ -281,6 +362,7 @@ impl PrintState {
             superscript: false,
             level: 0,
             bracket_level: 0,
+            indentation_level: 0,
         }
     }
 
@@ -304,6 +386,7 @@ impl PrintState {
             in_exp_base,
             level: self.level + 1,
             bracket_level: self.bracket_level,
+            indentation_level: self.indentation_level,
             ..self
         }
     }
