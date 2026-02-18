@@ -2446,6 +2446,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 if re_init {
                     h = kr_a.zero();
                     m = Integer::one();
+                    ms.clear();
                     missing_terms = true;
                     sigma = vec![HashSet::new(); d_0.to_u32() as usize + 1];
                     tau = vec![0; d_0.to_u32() as usize + 1];
@@ -2455,12 +2456,12 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 // TODO: check degree bound d_0 again?
                 // TODO: store current images of kra and krb, only recompute h mod p!
-                ms.retain(|p| {
-                    let p = Zp64::new(*p);
+                ms.retain(|p_i| {
+                    let p = Zp64::new(*p_i);
                     let kr_a_p = kr_a.map_coeff(|c| c.to_finite_field(&p), p.clone());
                     let kr_b_p = kr_b.map_coeff(|c| c.to_finite_field(&p), p.clone());
                     let kr_gamma_p = kr_gamma.map_coeff(|c| c.to_finite_field(&p), p.clone());
-                    let h = h.map_coeff(|c| c.to_finite_field(&p), p.clone());
+                    let h_p = h.map_coeff(|c| c.to_finite_field(&p), p.clone());
 
                     loop {
                         let beta = p.sample(&mut rng, (0, i64::MAX));
@@ -2468,14 +2469,15 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                             continue;
                         }
 
-                        let h_b = h.replace(1, &beta);
+                        let h_b = h_p.replace(1, &beta);
                         if kr_a_p.replace(1, &beta).try_div(&h_b).is_none()
                             || kr_b_p.replace(1, &beta).try_div(&h_b).is_none()
                         {
                             debug!("Bad Kronecker image for prime {}", p);
 
-                            m /= p.get_prime();
-                            break false; // keep prime
+                            m /= *p_i;
+                            h = h.map_coeff(|c| c % *p_i, Z); // remove bad prime from h
+                            break false;
                         }
 
                         break true;
@@ -2907,33 +2909,35 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     missing_terms = true;
                     sigma.clear();
                     tau.clear();
+                    ms.clear();
 
                     re_init = false;
                 }
 
                 // TODO: check degree bound d_0 again?
                 // TODO: store current images of kra and krb, only recompute h mod p!
-                ms.retain(|p| {
-                    let p = Zp64::new(*p);
+                ms.retain(|p_i| {
+                    let p = Zp64::new(*p_i);
                     let kr_a_p = kr_a.map_coeff(|c| c.to_finite_field(&p), p.clone());
                     let kr_b_p = kr_b.map_coeff(|c| c.to_finite_field(&p), p.clone());
                     let kr_gamma_p = kr_gamma.map_coeff(|c| c.to_finite_field(&p), p.clone());
-                    let h = h.map_coeff(|c| c.to_finite_field(&p), p.clone());
-
+                    let h_p = h.map_coeff(|c| c.to_finite_field(&p), p.clone());
                     loop {
                         let beta = p.sample(&mut rng, (0, i64::MAX));
                         if kr_gamma_p.replace(start_exp, &beta).is_zero() {
                             continue;
                         }
 
-                        let h_b = h.replace(start_exp, &beta);
+                        let h_b = h_p.replace(start_exp, &beta);
+
                         if kr_a_p.replace(start_exp, &beta).try_div(&h_b).is_none()
                             || kr_b_p.replace(start_exp, &beta).try_div(&h_b).is_none()
                         {
-                            debug!("Bad Kronecker image for prime {}", p);
+                            println!("Bad Kronecker image for prime {}", p);
 
-                            m /= p.get_prime();
-                            break false; // keep prime
+                            m /= *p_i;
+                            h = h.map_coeff(|c| c % *p_i, Z); // remove bad prime from h
+                            break false;
                         }
 
                         break true;
