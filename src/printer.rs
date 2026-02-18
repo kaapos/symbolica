@@ -1047,6 +1047,22 @@ impl FormattedPrintMul for MulView<'_> {
         let mut num_count = 0;
         let mut den_count = 0;
 
+        let add_num_paren = opts.mode.is_typst()
+            && self.iter().any(|x| {
+                if let AtomView::Pow(p) = x
+                    && let AtomView::Num(n) = p.get_exp()
+                    && let CoefficientView::Natural(num, _, 0, 1) = n.get_coeff_view()
+                {
+                    num < 0
+                } else {
+                    false
+                }
+            });
+
+        if add_num_paren {
+            f.write_char('(')?;
+        }
+
         // write the coefficient first
         let mut first = true;
         let mut skip_num = false;
@@ -1165,6 +1181,10 @@ impl FormattedPrintMul for MulView<'_> {
         if den_count > 0 {
             if num_count == 0 {
                 f.write_char('1')?;
+            }
+
+            if add_num_paren {
+                f.write_char(')')?;
             }
 
             // always do a global check on the args to see if we need to put
@@ -1359,7 +1379,13 @@ impl FormattedPrintFn for FunView<'_> {
             return Ok(false);
         }
 
-        id.format(opts, f)?;
+        if opts.mode.is_typst() {
+            f.write_str("op(")?;
+            id.format(opts, f)?;
+            f.write_str(")")?;
+        } else {
+            id.format(opts, f)?;
+        }
 
         if print_state.bracket_level == 0 {
             // the first level is only for top level products

@@ -421,6 +421,8 @@ class PrintMode(Enum):
     """Print using Mathematica notation."""
     Sympy = 4
     """Print using Sympy notation."""
+    Typst = 5
+    """Print using Typst notation."""
 
 
 class Expression:
@@ -872,6 +874,17 @@ class Expression:
         >>> print(a.to_latex())
 
         Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
+        """
+
+    def to_typst(self, show_namespaces: bool = False) -> str:
+        """Convert the expression into a Typst string.
+
+        Examples
+        --------
+        >>> a = E('f(x+2i + 3) * 2 / x')
+        >>> print(a.to_typst())
+
+        Yields ```(2 op("f")(3+2𝑖+"x"))/"x"```.
         """
 
     def to_sympy(self) -> str:

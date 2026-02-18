@@ -207,6 +207,8 @@ pub enum PythonPrintMode {
     Mathematica,
     /// Print using Sympy notation.
     Sympy,
+    /// Print using Typst notation.
+    Typst,
 }
 
 impl From<PrintMode> for PythonPrintMode {
@@ -216,6 +218,7 @@ impl From<PrintMode> for PythonPrintMode {
             PrintMode::Latex => PythonPrintMode::Latex,
             PrintMode::Mathematica => PythonPrintMode::Mathematica,
             PrintMode::Sympy => PythonPrintMode::Sympy,
+            PrintMode::Typst => PythonPrintMode::Typst,
             _ => {
                 error!("Unsupported PrintMode: {:?}", mode);
                 PythonPrintMode::Symbolica
@@ -231,6 +234,7 @@ impl From<PythonPrintMode> for PrintMode {
             PythonPrintMode::Latex => PrintMode::Latex,
             PythonPrintMode::Mathematica => PrintMode::Mathematica,
             PythonPrintMode::Sympy => PrintMode::Sympy,
+            PythonPrintMode::Typst => PrintMode::Typst,
         }
     }
 }
@@ -4317,6 +4321,26 @@ impl PythonExpression {
         Ok(format!(
             "$${}$$",
             AtomPrinter::new_with_options(self.expr.as_view(), LATEX_PRINT_OPTIONS,)
+        ))
+    }
+
+    /// Convert the expression into a Typst string.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = E('f(x+2i + 3) * 2 / x')
+    /// >>> print(a.to_typst())
+    ///
+    /// Yields ```(2 op("f")(3+2𝑖+"x"))/"x"```.
+    #[pyo3(signature = (show_namespaces = false))]
+    pub fn to_typst(&self, show_namespaces: bool) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            self.expr.printer(PrintOptions {
+                hide_all_namespaces: !show_namespaces,
+                hide_namespace: None,
+                ..PrintOptions::typst()
+            })
         ))
     }
 

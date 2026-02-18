@@ -1150,6 +1150,25 @@ impl Symbol {
                     }
                 }
             }
+        } else if opts.mode.is_typst() {
+            match self.get_id() {
+                Symbol::E_ID => f.write_char('e'),
+                Symbol::PI_ID => f.write_str("pi"),
+                Symbol::COS_ID => f.write_str("cos"),
+                Symbol::SIN_ID => f.write_str("sin"),
+                Symbol::EXP_ID => f.write_str("exp"),
+                Symbol::LOG_ID => f.write_str("log"),
+                _ => {
+                    f.write_char('"')?;
+
+                    if !opts.hide_all_namespaces {
+                        f.write_fmt(format_args!("{}::{}", namespace, name))?;
+                    } else {
+                        f.write_str(name)?;
+                    }
+                    f.write_char('"')
+                }
+            }
         } else {
             if (!opts.hide_all_namespaces || opts.include_attributes)
                 && !State::is_builtin(*self)
