@@ -11,7 +11,7 @@ use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
 use crate::parser::{ParseSettings, Token};
 use crate::poly::PolyVariable;
-use crate::{LicenseManager, symbol};
+use crate::{GLOBAL_SETTINGS, LicenseManager, symbol};
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
@@ -89,6 +89,14 @@ unsafe extern "C" fn get_license_key(email: *const c_char) -> bool {
             false
         }
     }
+}
+
+/// Use the Hu-Monagan algorithm for GCD computations.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn use_hu_monagan_poly_gcd(enable: bool) {
+    GLOBAL_SETTINGS
+        .use_hu_monagan_poly_gcd
+        .store(enable, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Create a new Symbolica handle.
