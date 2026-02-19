@@ -1,11 +1,11 @@
 //! Evaluation of expressions.
 //!
 //! The main entry point is through [AtomCore::evaluator].
-use ahash::{AHasher, HashMap, HashSet};
+use ahash::{AHasher, HashMap, HashMapExt, HashSet};
 use rand::Rng;
 use self_cell::self_cell;
-use smallvec::SmallVec;
 use std::{
+    collections::hash_map::Entry,
     hash::{Hash, Hasher},
     os::raw::{c_ulong, c_void},
     path::{Path, PathBuf},
@@ -1203,19 +1203,142 @@ impl<T: Default> ExpressionEvaluator<T> {
         (add_count, mul_count)
     }
 
+    /// Remove common instructions and return the number of removed instructions.
+    fn remove_common_instructions(&mut self) -> usize {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        enum CSE<'a> {
+            Add(&'a [usize]),
+            Mul(&'a [usize]),
+            Pow(usize, i64),
+            Powf(usize, usize),
+            BuiltinFun(u32, usize),
+            ExternalFun(u32, &'a [usize]),
+        }
+
+        let mut common_instr = HashMap::with_capacity(self.instructions.len());
+        let mut new_instr = Vec::with_capacity(self.instructions.len());
+        let mut i = 0;
+
+        let mut rename_map: Vec<_> = (0..self.reserved_indices).collect();
+        let mut removed = 0;
+
+        // for now, do not attempt a replacement if the instruction is in a branch
+        // we do not move the instruction
+        let mut branch_counter = 0;
+        for (instr, phase) in &self.instructions {
+            let new_pos = new_instr.len() + self.reserved_indices;
+
+            let key = match &self.instructions[i].0 {
+                Instr::Add(_, a) => Some(CSE::Add(a)),
+                Instr::Mul(_, a) => Some(CSE::Mul(a)),
+                Instr::Pow(_, b, e) => Some(CSE::Pow(*b, *e)),
+                Instr::Powf(_, b, e) => Some(CSE::Powf(*b, *e)),
+                Instr::BuiltinFun(_, s, a) => Some(CSE::BuiltinFun(s.0.get_id(), *a)),
+                Instr::ExternalFun(_, s, a) => Some(CSE::ExternalFun(*s as u32, a)),
+                _ => None,
+            };
+
+            if let Some(key) = key {
+                match common_instr.entry(key) {
+                    Entry::Occupied(o) => {
+                        removed += 1;
+                        rename_map.push(*o.get());
+                        i += 1;
+                        continue;
+                    }
+                    Entry::Vacant(v) => {
+                        // first time finding the key where it is not in a branch
+                        if branch_counter == 0 {
+                            v.insert(new_pos);
+                        }
+                    }
+                }
+            }
+
+            let mut s = instr.clone();
+
+            match &mut s {
+                Instr::Add(p, a) | Instr::Mul(p, a) => {
+                    let mut last = 0;
+                    let mut sort = false;
+                    for x in &mut *a {
+                        *x = rename_map[*x];
+                        if *x < last {
+                            sort = true;
+                        } else {
+                            last = *x;
+                        }
+                    }
+
+                    if sort {
+                        a.sort_unstable();
+                    }
+                    *p = new_pos;
+                }
+                Instr::Pow(p, b, _) | Instr::BuiltinFun(p, _, b) => {
+                    *b = rename_map[*b];
+                    *p = new_pos;
+                }
+                Instr::Powf(p, a, b) => {
+                    *a = rename_map[*a];
+                    *b = rename_map[*b];
+                    *p = new_pos;
+                }
+                Instr::ExternalFun(p, _, a) => {
+                    *p = new_pos;
+                    for x in a {
+                        *x = rename_map[*x];
+                    }
+                }
+                Instr::Join(p, a, b, c) => {
+                    branch_counter -= 1;
+                    *a = rename_map[*a];
+                    *b = rename_map[*b];
+                    *c = rename_map[*c];
+                    *p = new_pos;
+                }
+                Instr::IfElse(c, _) => {
+                    branch_counter += 1;
+                    *c = rename_map[*c];
+                }
+                Instr::Goto(_) | Instr::Label(_) => {}
+            }
+
+            new_instr.push((s, *phase));
+            rename_map.push(new_pos);
+            i += 1;
+        }
+
+        // fix labels
+        let mut label_map: HashMap<usize, usize> = HashMap::default();
+        for (i, (x, _)) in new_instr.iter_mut().enumerate().rev() {
+            match x {
+                Instr::Label(l) => {
+                    label_map.insert(l.0, i);
+                    l.0 = i;
+                }
+                Instr::Goto(l) => {
+                    l.0 = label_map[&l.0];
+                }
+                Instr::IfElse(_, l) => {
+                    l.0 = label_map[&l.0];
+                }
+                _ => {}
+            }
+        }
+
+        for x in &mut self.result_indices {
+            *x = rename_map[*x];
+        }
+
+        self.instructions = new_instr;
+
+        removed
+    }
+
     /// Remove common pairs of instructions. Assumes that the arguments
     /// of the instructions are sorted.
     fn remove_common_pairs(&mut self) -> usize {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-        enum CommonInstruction {
-            Add(usize, usize),
-            Mul(usize, usize),
-            BuiltinFun(Symbol, usize),
-            ExternalFun(usize, Box<SmallVec<[usize; 1]>>),
-        }
-
-        let mut common_ops: HashMap<_, SmallVec<[usize; 1]>> = HashMap::default();
-
         let mut affected_lines = vec![false; self.instructions.len()];
 
         // store the global branch a line belongs to
@@ -1223,13 +1346,20 @@ impl<T: Default> ExpressionEvaluator<T> {
         let mut dag_nodes = vec![0]; // store index to parent node
         let mut current_node = 0;
 
-        for (p, (i, _)) in self.instructions.iter().enumerate() {
-            if common_ops.len() > self.settings.max_common_pair_cache_entries {
-                common_ops.retain(|_, v| {
-                    v.len() > 1 || p - v[0] < self.settings.max_common_pair_distance
-                });
+        let mut common_ops_simple: HashMap<_, u32> = HashMap::default();
 
-                if common_ops.len() > self.settings.max_common_pair_cache_entries {
+        if self.instructions.len() > u32::MAX as usize / 2 {
+            // the extension is easy, but it will cost more memory.
+            // will only be added when a user runs into it.
+            error!(
+                "Too many instructions to find common pairs. Reach out to Symbolica devs to extend the limit."
+            );
+            return 0;
+        }
+
+        for (p, (i, _)) in self.instructions.iter().enumerate() {
+            if common_ops_simple.len() > self.settings.max_common_pair_cache_entries {
+                if common_ops_simple.len() > self.settings.max_common_pair_cache_entries {
                     break;
                 }
             }
@@ -1248,34 +1378,17 @@ impl<T: Default> ExpressionEvaluator<T> {
                     let is_add = matches!(i, Instr::Add(_, _));
                     for (li, l) in a.iter().enumerate() {
                         for r in &a[li + 1..] {
-                            if is_add {
-                                common_ops
-                                    .entry(CommonInstruction::Add(*l, *r))
-                                    .or_default()
-                                    .push(p);
-                            } else {
-                                common_ops
-                                    .entry(CommonInstruction::Mul(*l, *r))
-                                    .or_default()
-                                    .push(p);
+                            let mut key = (*l as u64) << 32 | (*r as u64) << 1;
+                            if !is_add {
+                                key |= 1;
                             }
+
+                            common_ops_simple
+                                .entry(key)
+                                .and_modify(|x| *x += 1)
+                                .or_insert(1);
                         }
                     }
-                }
-                Instr::BuiltinFun(_, f, a) => {
-                    common_ops
-                        .entry(CommonInstruction::BuiltinFun(f.0, *a))
-                        .or_default()
-                        .push(p);
-                }
-                Instr::ExternalFun(_, f, args) => {
-                    common_ops
-                        .entry(CommonInstruction::ExternalFun(
-                            *f,
-                            Box::new(SmallVec::from_slice(args)),
-                        ))
-                        .or_default()
-                        .push(p);
                 }
                 Instr::IfElse(_, _) => {
                     branch_id[p] = current_node;
@@ -1296,7 +1409,38 @@ impl<T: Default> ExpressionEvaluator<T> {
             branch_id[p] = current_node;
         }
 
-        let mut to_remove: Vec<_> = common_ops.clone().into_iter().collect();
+        common_ops_simple.retain(|_, v| *v > 1);
+
+        let mut common_ops_2: HashMap<_, Vec<usize>> = HashMap::default();
+
+        for (p, (i, _)) in self.instructions.iter().enumerate() {
+            match i {
+                Instr::Add(_, a) | Instr::Mul(_, a) => {
+                    let is_add = matches!(i, Instr::Add(_, _));
+                    for (li, l) in a.iter().enumerate() {
+                        for r in &a[li + 1..] {
+                            let mut key = (*l as u64) << 32 | (*r as u64) << 1;
+                            if !is_add {
+                                key |= 1;
+                            }
+
+                            if *common_ops_simple.get(&key).unwrap_or(&0) > 1 {
+                                common_ops_2.entry(key).or_default().push(p);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        drop(common_ops_simple); // clear the memory
+
+        if common_ops_2.is_empty() {
+            return 0;
+        }
+
+        let mut to_remove: Vec<_> = common_ops_2.into_iter().collect();
         to_remove.retain_mut(|(_, v)| {
             let keep = v.len() > 1;
             v.dedup();
@@ -1312,166 +1456,86 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         let mut new_symb_branch = vec![];
 
-        while let Some((common, lines)) = to_remove.pop() {
-            match common {
-                CommonInstruction::Add(l, r) | CommonInstruction::Mul(l, r) => {
-                    let is_add = matches!(common, CommonInstruction::Add(_, _));
+        while let Some((key, lines)) = to_remove.pop() {
+            let l = (key >> 32) as usize;
+            let r = ((key >> 1) & 0x7FFFFFFF) as usize;
+            let is_add = key & 1 == 0;
 
-                    if lines.iter().any(|x| affected_lines[*x]) {
-                        continue;
-                    }
+            if lines.iter().any(|x| affected_lines[*x]) {
+                continue;
+            }
 
-                    let new_idx = self.stack.len();
-                    let new_op = if is_add {
-                        Instr::Add(new_idx, vec![l, r])
+            let new_idx = self.stack.len();
+            let new_op = if is_add {
+                Instr::Add(new_idx, vec![l, r])
+            } else {
+                Instr::Mul(new_idx, vec![l, r])
+            };
+
+            self.stack.push(T::default());
+            self.instructions.push((new_op, ComplexPhase::Any));
+
+            let mut branch = branch_id[lines[0]];
+            for &line in &lines {
+                affected_lines[line] = true;
+
+                let mut new_branch = branch_id[line];
+                // find common root
+                while branch != new_branch {
+                    if branch > new_branch {
+                        branch = dag_nodes[branch];
                     } else {
-                        Instr::Mul(new_idx, vec![l, r])
-                    };
-
-                    self.stack.push(T::default());
-                    self.instructions.push((new_op, ComplexPhase::Any));
-
-                    let mut branch = branch_id[lines[0]];
-                    for &line in &lines {
-                        affected_lines[line] = true;
-
-                        let mut new_branch = branch_id[line];
-                        // find common root
-                        while branch != new_branch {
-                            if branch > new_branch {
-                                branch = dag_nodes[branch];
-                            } else {
-                                new_branch = dag_nodes[new_branch];
-                            }
-                        }
-
-                        let is_add = matches!(self.instructions[line].0, Instr::Add(_, _));
-
-                        if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line].0
-                        {
-                            for (li, l) in a.iter().enumerate() {
-                                for r in &a[li + 1..] {
-                                    let pp = common_ops
-                                        .entry(if is_add {
-                                            CommonInstruction::Add(*l, *r)
-                                        } else {
-                                            CommonInstruction::Mul(*l, *r)
-                                        })
-                                        .or_default();
-                                    pp.retain(|x| *x != line);
-                                }
-                            }
-
-                            if l == r {
-                                let count = a.iter().filter(|x| **x == l).count();
-                                let pairs = count / 2;
-                                if pairs > 0 {
-                                    a.retain(|x| *x != l);
-
-                                    if count % 2 == 1 {
-                                        a.push(l);
-                                    }
-
-                                    a.extend(std::iter::repeat_n(new_idx, pairs));
-                                    a.sort();
-                                }
-                            } else {
-                                let mut idx1_count = 0;
-                                let mut idx2_count = 0;
-                                for v in &*a {
-                                    if *v == l {
-                                        idx1_count += 1;
-                                    }
-                                    if *v == r {
-                                        idx2_count += 1;
-                                    }
-                                }
-
-                                let pair_count = idx1_count.min(idx2_count);
-
-                                if pair_count > 0 {
-                                    a.retain(|x| *x != l && *x != r);
-
-                                    // add back removed indices in cases such as idx1*idx2*idx2
-                                    if idx1_count > pair_count {
-                                        a.extend(std::iter::repeat_n(l, idx1_count - pair_count));
-                                    }
-                                    if idx2_count > pair_count {
-                                        a.extend(std::iter::repeat_n(r, idx2_count - pair_count));
-                                    }
-
-                                    a.extend(std::iter::repeat_n(new_idx, pair_count));
-                                    a.sort();
-                                }
-                            }
-
-                            // update the pairs for this line
-                            for (li, l) in a.iter().enumerate() {
-                                for r in &a[li + 1..] {
-                                    common_ops
-                                        .entry(if is_add {
-                                            CommonInstruction::Add(*l, *r)
-                                        } else {
-                                            CommonInstruction::Mul(*l, *r)
-                                        })
-                                        .or_default()
-                                        .push(line);
-                                }
-                            }
-                        }
+                        new_branch = dag_nodes[new_branch];
                     }
-
-                    new_symb_branch.push((lines[0], branch));
                 }
-                CommonInstruction::BuiltinFun(_, _) | CommonInstruction::ExternalFun(_, _) => {
-                    if lines.iter().any(|x| affected_lines[*x]) {
-                        continue;
+
+                if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line].0 {
+                    if l == r {
+                        let count = a.iter().filter(|x| **x == l).count();
+                        let pairs = count / 2;
+                        if pairs > 0 {
+                            a.retain(|x| *x != l);
+
+                            if count % 2 == 1 {
+                                a.push(l);
+                            }
+
+                            a.extend(std::iter::repeat_n(new_idx, pairs));
+                            a.sort_unstable();
+                        }
+                    } else {
+                        let mut idx1_count = 0;
+                        let mut idx2_count = 0;
+                        for v in &*a {
+                            if *v == l {
+                                idx1_count += 1;
+                            }
+                            if *v == r {
+                                idx2_count += 1;
+                            }
+                        }
+
+                        let pair_count = idx1_count.min(idx2_count);
+
+                        if pair_count > 0 {
+                            a.retain(|x| *x != l && *x != r);
+
+                            // add back removed indices in cases such as idx1*idx2*idx2
+                            if idx1_count > pair_count {
+                                a.extend(std::iter::repeat_n(l, idx1_count - pair_count));
+                            }
+                            if idx2_count > pair_count {
+                                a.extend(std::iter::repeat_n(r, idx2_count - pair_count));
+                            }
+
+                            a.extend(std::iter::repeat_n(new_idx, pair_count));
+                            a.sort_unstable();
+                        }
                     }
-
-                    let new_idx = self.stack.len();
-                    let new_op = match common {
-                        CommonInstruction::BuiltinFun(s, a) => {
-                            Instr::BuiltinFun(new_idx, BuiltinSymbol(s), a)
-                        }
-                        CommonInstruction::ExternalFun(s, a) => {
-                            Instr::ExternalFun(new_idx, s, a.to_vec())
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    self.stack.push(T::default());
-                    self.instructions.push((new_op, ComplexPhase::Any));
-
-                    let mut branch = branch_id[lines[0]];
-                    for &line in &lines {
-                        affected_lines[line] = true;
-
-                        let mut new_branch = branch_id[line];
-                        // find common root
-                        while branch != new_branch {
-                            if branch > new_branch {
-                                branch = dag_nodes[branch];
-                            } else {
-                                new_branch = dag_nodes[new_branch];
-                            }
-                        }
-
-                        match &self.instructions[line].0 {
-                            Instr::BuiltinFun(r, _, _) => {
-                                self.instructions[line] =
-                                    (Instr::Add(*r, vec![new_idx]), ComplexPhase::Any);
-                            }
-                            Instr::ExternalFun(r, _, _) => {
-                                self.instructions[line] =
-                                    (Instr::Add(*r, vec![new_idx]), ComplexPhase::Any);
-                            }
-                            _ => panic!("Expected BuiltinFun or ExternalFun instruction"),
-                        }
-                    }
-
-                    new_symb_branch.push((lines[0], branch));
                 }
             }
+
+            new_symb_branch.push((lines[0], branch));
         }
 
         // detect the earliest point and latest point for an instruction placement
@@ -1535,8 +1599,6 @@ impl<T: Default> ExpressionEvaluator<T> {
                 let (o, a) = match &placement_bounds[j].2 {
                     Instr::Add(o, a) => (*o, a.as_slice()),
                     Instr::Mul(o, a) => (*o, a.as_slice()),
-                    Instr::BuiltinFun(o, _, a) => (*o, std::slice::from_ref(a)),
-                    Instr::ExternalFun(o, _, a) => (*o, a.as_slice()),
                     _ => unreachable!(),
                 };
 
@@ -1549,13 +1611,6 @@ impl<T: Default> ExpressionEvaluator<T> {
                     }
                     Instr::Mul(_, _) => {
                         new_instr.push((Instr::Mul(new_pos, new_a), ComplexPhase::Any));
-                    }
-                    Instr::BuiltinFun(_, b, _) => {
-                        new_instr
-                            .push((Instr::BuiltinFun(new_pos, b, new_a[0]), ComplexPhase::Any));
-                    }
-                    Instr::ExternalFun(_, fi, _) => {
-                        new_instr.push((Instr::ExternalFun(new_pos, fi, new_a), ComplexPhase::Any));
                     }
                     _ => unreachable!(),
                 }
@@ -2030,6 +2085,13 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
         self.reserved_indices = new_reserved_indices;
 
         self.undo_stack_optimization();
+
+        loop {
+            if self.settings.abort_level > 0 || self.remove_common_instructions() == 0 {
+                self.settings.abort_level = 0;
+                break;
+            }
+        }
 
         for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
             if self.settings.abort_level > 0 || self.remove_common_pairs() == 0 {
@@ -6209,6 +6271,23 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             external_fns: self.external_functions.clone(),
             settings: settings.clone(),
         };
+
+        loop {
+            let r = e.remove_common_instructions();
+
+            if r == 0 || e.settings.abort_level > 0 {
+                e.settings.abort_level = 0;
+                break;
+            }
+
+            if settings.verbose {
+                let (add_count, mul_count) = e.count_operations();
+                info!(
+                    "Removed {} common instructions: {} + and {} ×",
+                    r, add_count, mul_count
+                );
+            }
+        }
 
         for _ in 0..settings.cpe_iterations.unwrap_or(usize::MAX) {
             let r = e.remove_common_pairs();
