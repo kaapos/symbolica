@@ -5868,11 +5868,8 @@ impl<T: DualNumberStructure> Vectorize<Complex<Rational>> for Dualizer<T> {
                 );
 
                 let one = instrs.add_constant_in_first_component(Complex::from(Rational::one()));
-
-                let neg_one = instrs.add_repeated_constant(Complex::from(Rational::from(-1)));
-                let neg_one_v = (0..self.dual.get_len())
-                    .map(|j| neg_one.index(j))
-                    .collect::<Vec<_>>();
+                let neg_one =
+                    instrs.add_constant_in_first_component(Complex::from(Rational::from(-1)));
 
                 let mut accum = (0..self.dual.get_len())
                     .map(|j| one.index(j))
@@ -5886,12 +5883,7 @@ impl<T: DualNumberStructure> Vectorize<Complex<Rational>> for Dualizer<T> {
                     if i % 2 == 0 {
                         res = add(&res, &accum, self, instrs);
                     } else {
-                        res = add(
-                            &res,
-                            &mul(&accum, &neg_one_v, mult_table, self, instrs),
-                            self,
-                            instrs,
-                        );
+                        res = add(&res, &rescale(&accum, &neg_one, self, instrs), self, instrs);
                     }
                 }
 
@@ -10662,10 +10654,10 @@ mod test {
             ]
         );
 
-        let ev = parse!("sin(x+y)^2+cos(x+y)^2 - 1")
+        let ev = parse!("sin(x+y)^2+cos(x+y)^2 - exp(sqrt(x)/sqrt(z)-1)")
             .evaluator(
                 &FunctionMap::new(),
-                &[parse!("x"), parse!("y")],
+                &[parse!("x"), parse!("y"), parse!("z")],
                 OptimizationSettings::default(),
             )
             .unwrap();
@@ -10678,6 +10670,7 @@ mod test {
         vec_f.evaluate(
             &[
                 2.0, 1.0, 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17.,
+                2.0, 1.0, 2., 3., 4., 5., 6., 7., 8.,
             ],
             &mut dest,
         );
