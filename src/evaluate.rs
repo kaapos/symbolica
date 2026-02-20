@@ -2837,7 +2837,7 @@ extern "C" {{
             };
         }
 
-        let mut close_else_branch = false;
+        let mut close_else_branch = 0;
         for (ins, _c) in &self.instructions {
             match ins {
                 Instr::Add(o, a) => {
@@ -2911,12 +2911,12 @@ extern "C" {{
                 }
                 Instr::Goto(..) => {
                     *out += "\t} else {\n";
-                    close_else_branch = true;
+                    close_else_branch += 1;
                 }
                 Instr::Label(..) => {}
                 Instr::Join(o, cond, a, b) => {
-                    if close_else_branch {
-                        close_else_branch = false;
+                    if close_else_branch > 0 {
+                        close_else_branch -= 1;
                         *out += "\t}\n";
                     }
                     let arg_a = get_input!(*a);
@@ -3377,7 +3377,7 @@ extern "C" {{
         }
 
         let mut in_asm_block = false;
-        let mut close_else_branch = false;
+        let mut close_else_branch = 0;
         for ins in &new_instr {
             match ins {
                 RegInstr::Add(o, free, a) | RegInstr::Mul(o, free, a) => {
@@ -4022,13 +4022,13 @@ extern "C" {{
                 RegInstr::Goto => {
                     end_asm_block!(in_asm_block);
                     *out += "\t} else {\n";
-                    close_else_branch = true;
+                    close_else_branch += 1;
                 }
                 RegInstr::Label => {}
                 RegInstr::Join(o, cond, a, b) => {
                     end_asm_block!(in_asm_block);
-                    if close_else_branch {
-                        close_else_branch = false;
+                    if close_else_branch > 0 {
+                        close_else_branch -= 1;
                         *out += "\t}\n";
                     }
                     let arg_a = get_input!(*a);
@@ -4301,7 +4301,7 @@ extern "C" {{
         }
 
         let mut in_asm_block = false;
-        let mut close_else_branch = false;
+        let mut close_else_branch = 0;
         for (ins, c) in instr {
             match ins {
                 Instr::Add(o, a) => {
@@ -4701,13 +4701,13 @@ extern "C" {{
                 Instr::Goto(_) => {
                     end_asm_block!(in_asm_block);
                     *out += "\t} else {\n";
-                    close_else_branch = true;
+                    close_else_branch += 1;
                 }
                 Instr::Label(_) => {}
                 Instr::Join(o, cond, a, b) => {
                     end_asm_block!(in_asm_block);
-                    if close_else_branch {
-                        close_else_branch = false;
+                    if close_else_branch > 0 {
+                        close_else_branch -= 1;
                         *out += "\t}\n";
                     }
                     let arg_a = get_input!(*a);
