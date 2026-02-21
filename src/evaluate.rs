@@ -1126,6 +1126,7 @@ impl<T: Real> ExpressionEvaluator<T> {
                     Symbol::SIN_ID => self.stack[*r] = self.stack[*arg].sin(),
                     Symbol::COS_ID => self.stack[*r] = self.stack[*arg].cos(),
                     Symbol::SQRT_ID => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::ABS_ID => self.stack[*r] = self.stack[*arg].norm(),
                     Symbol::CONJ_ID => self.stack[*r] = self.stack[*arg].conj(),
                     _ => unreachable!(),
                 },
@@ -1844,11 +1845,18 @@ impl<T: Default + PartialEq> ExpressionEvaluator<Complex<T>> {
                     subcomponents[*r] = *sc;
                 }
                 Instr::BuiltinFun(r, s, a) => {
+                    if s.0.is_real() {
+                        *sc = ComplexPhase::Real;
+                        subcomponents[*r] = *sc;
+                        continue;
+                    }
+
                     if subcomponents[*a] != ComplexPhase::Real {
                         subcomponents[*r] = ComplexPhase::Any;
                         *sc = ComplexPhase::Any;
                         continue;
                     }
+
                     match s.0.get_id() {
                         Symbol::EXP_ID | Symbol::CONJ_ID | Symbol::SIN_ID | Symbol::COS_ID => {
                             *sc = ComplexPhase::Real;
@@ -2892,6 +2900,10 @@ extern "C" {{
                     Symbol::SQRT_ID => {
                         let arg = get_input!(*a);
                         *out += format!("\t{} = sqrt({arg});\n", get_output!(o)).as_str();
+                    }
+                    Symbol::ABS_ID => {
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = abs({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::CONJ_ID => {
                         let arg = get_input!(*a);
@@ -3996,6 +4008,9 @@ extern "C" {{
                         Symbol::SQRT_ID => {
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
+                        Symbol::ABS_ID => {
+                            *out += format!("\tZ[{o}] = abs({arg});\n").as_str();
+                        }
                         Symbol::CONJ_ID => {
                             *out += format!("\tZ[{o}] = {arg};\n").as_str();
                         }
@@ -4671,6 +4686,9 @@ extern "C" {{
                         Symbol::SQRT_ID => {
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
+                        Symbol::ABS_ID => {
+                            *out += format!("\tZ[{o}] = abs({arg});\n").as_str();
+                        }
                         Symbol::CONJ_ID => {
                             if let ComplexPhase::Real = *c {
                                 *out += format!("\tZ[{o}] = {arg};\n").as_str();
@@ -4926,6 +4944,7 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
                     Symbol::SIN_ID => self.stack[*r] = self.stack[*arg].sin(),
                     Symbol::COS_ID => self.stack[*r] = self.stack[*arg].cos(),
                     Symbol::SQRT_ID => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::ABS_ID => self.stack[*r] = self.stack[*arg].norm(),
                     Symbol::CONJ_ID => self.stack[*r] = self.stack[*arg].conj(),
                     _ => unreachable!(),
                 },
@@ -5907,6 +5926,19 @@ impl<T: DualNumberStructure> Vectorize<Complex<Rational>> for Dualizer<T> {
                     }
 
                     e.iter().map(|x| VectorInstruction::Assign(*x)).collect()
+                }
+                Symbol::ABS_ID => {
+                    let n = instrs.add(VectorInstruction::BuiltinFun(
+                        BuiltinSymbol(Symbol::ABS),
+                        *a,
+                    ));
+
+                    let inv_val = instrs.add(VectorInstruction::Pow(*a, -1));
+                    let scale = instrs.add(VectorInstruction::Mul(n, inv_val));
+
+                    (0..self.dual.get_len())
+                        .map(|j| scalar_yield_mul(&a.index(j), &scale, self, instrs))
+                        .collect()
                 }
                 Symbol::CONJ_ID => {
                     // assume variables are real
@@ -7797,6 +7829,7 @@ impl<T: Real> EvalTree<T> {
                     Symbol::SIN_ID => arg.sin(),
                     Symbol::COS_ID => arg.cos(),
                     Symbol::SQRT_ID => arg.sqrt(),
+                    Symbol::ABS_ID => arg.norm(),
                     Symbol::CONJ_ID => arg.conj(),
                     _ => unreachable!(),
                 }
@@ -10058,6 +10091,7 @@ impl<'a> AtomView<'a> {
                     Symbol::SIN_ID,
                     Symbol::COS_ID,
                     Symbol::SQRT_ID,
+                    Symbol::ABS_ID,
                     Symbol::CONJ_ID,
                 ]
                 .contains(&name.get_id())
@@ -10072,7 +10106,11 @@ impl<'a> AtomView<'a> {
                     ));
                 }
 
-                let Some(fun) = fn_map.get(*self) else {
+                let fun = if name == Symbol::IF {
+                    &ConstOrExpr::Condition
+                } else if let Some(fun) = fn_map.get(*self) {
+                    fun
+                } else {
                     return Err(format!("Undefined function {}", self.to_plain_string()));
                 };
 
@@ -10316,6 +10354,7 @@ impl<'a> AtomView<'a> {
                     Symbol::SIN_ID,
                     Symbol::COS_ID,
                     Symbol::SQRT_ID,
+                    Symbol::ABS_ID,
                     Symbol::CONJ_ID,
                 ]
                 .contains(&name.get_id())
@@ -10330,9 +10369,47 @@ impl<'a> AtomView<'a> {
                         Symbol::SIN_ID => arg_eval.sin(),
                         Symbol::COS_ID => arg_eval.cos(),
                         Symbol::SQRT_ID => arg_eval.sqrt(),
+                        Symbol::ABS_ID => arg_eval.norm(),
                         Symbol::CONJ_ID => arg_eval.conj(),
                         _ => unreachable!(),
                     });
+                }
+
+                if name == Symbol::IF {
+                    if f.get_nargs() != 3 {
+                        return Err(format!(
+                            "Condition function called with wrong number of arguments: {} vs 3",
+                            f.get_nargs(),
+                        ));
+                    }
+
+                    let mut arg_iter = f.iter();
+
+                    let cond_eval = arg_iter.next().unwrap().evaluate_impl(
+                        coeff_map,
+                        const_map,
+                        function_map,
+                        cache,
+                    )?;
+
+                    if !cond_eval.is_fully_zero() {
+                        let t_eval = arg_iter.next().unwrap().evaluate_impl(
+                            coeff_map,
+                            const_map,
+                            function_map,
+                            cache,
+                        )?;
+                        return Ok(t_eval);
+                    } else {
+                        let _ = arg_iter.next().unwrap();
+                        let f_eval = arg_iter.next().unwrap().evaluate_impl(
+                            coeff_map,
+                            const_map,
+                            function_map,
+                            cache,
+                        )?;
+                        return Ok(f_eval);
+                    }
                 }
 
                 if let Some(eval) = cache.get(self) {

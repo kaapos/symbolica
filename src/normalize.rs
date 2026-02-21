@@ -852,6 +852,7 @@ impl AtomView<'_> {
                     Symbol::EXP_ID,
                     Symbol::LOG_ID,
                     Symbol::SQRT_ID,
+                    Symbol::ABS_ID,
                 ]
                 .contains(&id.get_id())
                     && out_f.to_fun_view().get_nargs() == 1
@@ -862,10 +863,19 @@ impl AtomView<'_> {
                             if id == Symbol::COS || id == Symbol::EXP {
                                 out.to_num(Coefficient::one());
                                 return;
-                            } else if id == Symbol::SIN || id == Symbol::LOG || id == Symbol::SQRT {
+                            } else if id == Symbol::SIN
+                                || id == Symbol::LOG
+                                || id == Symbol::SQRT
+                                || id == Symbol::ABS
+                            {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
+                        }
+
+                        if id == Symbol::SQRT && n.is_one() {
+                            out.to_num(Coefficient::one());
+                            return;
                         }
 
                         if n.is_zero() && id == Symbol::LOG {
@@ -922,9 +932,52 @@ impl AtomView<'_> {
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
+                                Symbol::ABS_ID => {
+                                    let r = if i.is_zero() {
+                                        r.to_float().norm().into()
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).norm().into()
+                                    };
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
                                 _ => {}
                             }
                         }
+
+                        if id.get_id() == Symbol::ABS_ID {
+                            if let Coefficient::Complex(c) = n.get_coeff_view().to_owned() {
+                                if c.is_real() {
+                                    out.to_num(c.re.abs().into());
+                                } else {
+                                    let r = c.norm_squared();
+                                    let mut buffer = workspace.new_atom();
+                                    buffer.to_num(r.into());
+                                    *out = buffer.pow((1, 2));
+                                }
+                                return;
+                            }
+                        }
+                    } else if id.get_id() == Symbol::ABS_ID && arg.is_positive() {
+                        let mut buffer = workspace.new_atom();
+                        buffer.set_from_view(&arg);
+                        out.set_from_view(&buffer.as_view());
+                        return;
+                    }
+                }
+
+                if id == Symbol::IF && out_f.to_fun_view().get_nargs() == 3 {
+                    let mut iter = out_f.to_fun_view().iter();
+
+                    if let AtomView::Num(x) = iter.next().unwrap() {
+                        let mut buffer = workspace.new_atom();
+                        if x.is_zero() {
+                            iter.next();
+                        }
+
+                        buffer.set_from_view(&iter.next().unwrap());
+                        out.set_from_view(&buffer.as_view());
+                        return;
                     }
                 }
 
@@ -1325,18 +1378,27 @@ impl AtomView<'_> {
                             base_handle.to_num(new_base_num);
                             exp_handle.to_num(new_exp_num);
                         } else if let AtomView::Pow(p_base) = base_handle.as_view() {
-                            if exp_num.is_integer() || base_handle.is_positive() {
-                                // rewrite (x^y)^3 as x^(3*y)
+                            let exp_is_integer = exp_num.is_integer();
+                            if exp_is_integer || base_handle.is_positive() {
                                 let (p_base_base, p_base_exp) = p_base.get_base_exp();
-
                                 let mut mul_h = workspace.new_atom();
                                 let mul = mul_h.to_mul();
+
                                 mul.extend(p_base_exp);
                                 mul.extend(exp_handle.as_view());
                                 let mut exp_h = workspace.new_atom();
                                 mul.as_view().normalize(workspace, &mut exp_h);
 
-                                mul_h.to_pow(p_base_base, exp_h.as_view());
+                                if exp_is_integer || p_base_base.is_positive() {
+                                    mul_h.to_pow(p_base_base, exp_h.as_view());
+                                } else {
+                                    // the base-base is real but not positive, so add abs
+                                    let mut new_base = workspace.new_atom();
+                                    let abs_fun = new_base.to_fun(Symbol::ABS);
+                                    abs_fun.add_arg(p_base_base);
+                                    mul_h.to_pow(new_base.as_view(), exp_h.as_view());
+                                }
+
                                 mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
