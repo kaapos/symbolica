@@ -119,17 +119,22 @@ impl State {
         Symbol::raw_fn(6, 0, false, false, false, false, false, false, false, false);
     pub(crate) const CONJ: Symbol =
         Symbol::raw_fn(7, 0, false, false, false, false, false, false, false, false);
-    pub(crate) const DERIVATIVE: Symbol =
-        Symbol::raw_fn(8, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const ABS: Symbol =
+        Symbol::raw_fn(8, 0, false, false, false, false, false, true, false, true);
+    pub(crate) const IF: Symbol =
+        Symbol::raw_fn(9, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const DERIVATIVE: Symbol = Symbol::raw_fn(
+        10, 0, false, false, false, false, false, false, false, false,
+    );
     pub(crate) const E: Symbol =
-        Symbol::raw_fn(9, 0, false, false, false, false, true, true, false, true);
+        Symbol::raw_fn(11, 0, false, false, false, false, true, true, false, true);
     pub(crate) const PI: Symbol =
-        Symbol::raw_fn(10, 0, false, false, false, false, true, true, false, true);
+        Symbol::raw_fn(12, 0, false, false, false, false, true, true, false, true);
     pub(crate) const SEP: Symbol =
-        Symbol::raw_fn(11, 0, false, false, false, false, true, true, true, true);
+        Symbol::raw_fn(13, 0, false, false, false, false, true, true, true, true);
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 12] = [
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 14] = [
         "arg",
         "coeff",
         "exp",
@@ -138,6 +143,8 @@ impl State {
         "cos",
         "sqrt",
         "conj",
+        "abs",
+        "if",
         "der",
         Symbol::E_STR,
         Symbol::PI_STR,
@@ -145,7 +152,7 @@ impl State {
     ];
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOLS: [Symbol; 12] = [
+    pub const BUILTIN_SYMBOLS: [Symbol; 14] = [
         Self::ARG,
         Self::COEFF,
         Self::EXP,
@@ -154,6 +161,8 @@ impl State {
         Self::COS,
         Self::SQRT,
         Self::CONJ,
+        Self::ABS,
+        Self::IF,
         Self::DERIVATIVE,
         Self::E,
         Self::PI,

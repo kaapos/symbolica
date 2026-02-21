@@ -475,8 +475,14 @@ class Expression:
     SQRT: Expression
     """The built-in square root function."""
 
+    ABS: Expression
+    """The built-in absolute value function."""
+
     CONJ: Expression
     """The built-in complex conjugate function."""
+
+    IF: Expression
+    """The built-in function for piecewise-defined expressions. `IF(cond, true_expr, false_expr)` evaluates to `true_expr` if `cond` is non-zero and `false_expr` otherwise."""
 
     @overload
     @classmethod
@@ -1120,6 +1126,11 @@ class Expression:
     def sqrt(self) -> Expression:
         """
         Take the square root of this expression, returning the result.
+        """
+
+    def abs(self) -> Expression:
+        """
+        Take the absolute value of this expression, returning the result.
         """
 
     def conj(self) -> Expression:

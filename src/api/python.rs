@@ -3110,8 +3110,12 @@ impl PythonTransformer {
 ///     The built-in logarithm function.
 /// SQRT: Expression
 ///     The built-in square root function.
+/// ABS: Expression
+///    The built-in absolute value function.
 /// CONJ: Expression
 ///     The built-in complex conjugate function.
+/// IF: Expression
+///    The built-in function for piecewise-defined expressions. `IF(cond, true_expr, false_expr)` evaluates to `true_expr` if `cond` is non-zero and `false_expr` otherwise.
 #[cfg_attr(feature = "python_stubgen", gen_stub_pyclass)]
 #[pyclass(
     from_py_object,
@@ -4116,11 +4120,25 @@ impl PythonExpression {
         Atom::var(Symbol::SQRT).into()
     }
 
+    /// The built-in absolute value function.
+    #[classattr]
+    #[pyo3(name = "ABS")]
+    pub fn abs_attr() -> PythonExpression {
+        Atom::var(Symbol::ABS).into()
+    }
+
     /// The built-in complex conjugate function.
     #[classattr]
     #[pyo3(name = "CONJ")]
     pub fn conj_attr() -> PythonExpression {
         Atom::var(Symbol::CONJ).into()
+    }
+
+    /// The built-in if function.
+    #[classattr]
+    #[pyo3(name = "IF")]
+    pub fn if_attr() -> PythonExpression {
+        Atom::var(Symbol::IF).into()
     }
 
     /// Return all defined symbol names (function names and variables).
@@ -4899,6 +4917,11 @@ impl PythonExpression {
     /// Compute the square root of the expression.
     pub fn sqrt(&self) -> PythonExpression {
         self.expr.sqrt().into()
+    }
+
+    /// Compute the absolute value of the expression.
+    pub fn abs(&self) -> PythonExpression {
+        self.expr.abs().into()
     }
 
     /// Take the complex conjugate of this expression, returning the result.

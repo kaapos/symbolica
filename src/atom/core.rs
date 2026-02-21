@@ -120,7 +120,7 @@ pub trait AtomCore: private::Sealed {
         }
     }
 
-    /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
+    /// Take the `self` to the power `exp`. Use [`Atom::rpow()`] for the reverse operation.
     fn pow<'a, T: Into<AtomOrView<'a>>>(&self, exp: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
@@ -1600,6 +1600,13 @@ pub trait AtomCore: private::Sealed {
     /// Take the square root of the atom.
     fn sqrt(&self) -> Atom {
         FunctionBuilder::new(Symbol::SQRT)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    /// Take the absolute value of the atom.
+    fn abs(&self) -> Atom {
+        FunctionBuilder::new(Symbol::ABS)
             .add_arg(self.as_atom_view())
             .finish()
     }

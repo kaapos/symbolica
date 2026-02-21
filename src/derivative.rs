@@ -132,7 +132,7 @@ impl AtomView<'_> {
                         _ => unreachable!(),
                     }
 
-                    let (_, mut arg_der) = args_der.pop().unwrap();
+                    let (_, mut arg_der) = args_der.pop().unwrap_or((0, Atom::Zero.into()));
                     if let Atom::Mul(m) = arg_der.deref_mut() {
                         m.extend(fn_der.as_view());
                         arg_der.as_view().normalize(workspace, out);
@@ -144,6 +144,27 @@ impl AtomView<'_> {
                         mul.as_view().normalize(workspace, out);
                     }
 
+                    return true;
+                }
+
+                if f.get_nargs() == 3 && f.get_symbol_id() == Symbol::IF_ID {
+                    let mut fn_der = workspace.new_atom();
+                    let der = fn_der.to_fun(Symbol::IF);
+                    der.add_arg(f.iter().next().unwrap());
+
+                    if let Some((_, d)) = args_der.iter().find(|(i, _)| *i == 1) {
+                        der.add_arg(d.as_view());
+                    } else {
+                        der.add_arg(Atom::Zero.as_view());
+                    };
+
+                    if let Some((_, d)) = args_der.iter().find(|(i, _)| *i == 2) {
+                        der.add_arg(d.as_view());
+                    } else {
+                        der.add_arg(Atom::Zero.as_view());
+                    };
+
+                    fn_der.as_view().normalize(workspace, out);
                     return true;
                 }
 
@@ -421,6 +442,13 @@ impl AtomView<'_> {
                     return Ok(info.constant(f.to_owned().into()));
                 }
 
+                let symbol = f.get_symbol();
+
+                if symbol == Symbol::IF && f.iter().skip(1).any(|arg| arg.contains_indeterminate(x))
+                {
+                    return Err("Cannot series expand non-constant if function".to_owned());
+                }
+
                 if !f.get_symbol().is_builtin()
                     && args_series
                         .iter()
@@ -469,6 +497,8 @@ impl AtomView<'_> {
                             * order.denominator().to_i64().unwrap() as u32;
 
                         let mut result = info.constant(constant.clone());
+
+                        // TODO: do not allow series expansion in IF if it is not a constant!
 
                         let mut d = a.clone();
                         for i in 1..=depth {

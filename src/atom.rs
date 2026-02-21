@@ -689,6 +689,13 @@ impl Symbol {
     pub const SQRT: Symbol = State::SQRT;
     /// The complex conjugate function.
     pub const CONJ: Symbol = State::CONJ;
+    /// The complex absolute value function.
+    pub const ABS: Symbol = State::ABS;
+    /// The built-in function that represents a conditional expression.
+    /// The first argument is the condition, the second argument is the value if the condition is true,
+    /// and the third argument is the value if the condition is false.
+    /// The condition is a numerical expression that is considered true if it is nonzero and false if it is zero.
+    pub const IF: Symbol = State::IF;
     /// The built-in function that represents a logical separator of function arguments.
     pub const SEP: Symbol = State::SEP;
     /// The built-in function that represents an abstract derivative.
@@ -711,6 +718,8 @@ impl Symbol {
     pub(crate) const COS_ID: u32 = State::COS.id;
     pub(crate) const SQRT_ID: u32 = State::SQRT.id;
     pub(crate) const CONJ_ID: u32 = State::CONJ.id;
+    pub(crate) const ABS_ID: u32 = State::ABS.id;
+    pub(crate) const IF_ID: u32 = State::IF.id;
     pub(crate) const DERIVATIVE_ID: u32 = State::DERIVATIVE.id;
     pub(crate) const E_ID: u32 = State::E.id;
     pub(crate) const PI_ID: u32 = State::PI.id;
@@ -3063,7 +3072,7 @@ mod test {
         let x = parse!("v1+f1(v2)");
         assert_eq!(
             format!("{x:#?}"),
-            "AddView { data: [5, 17, 2, 13, 2, 1, 13, 3, 5, 0, 0, 0, 1, 43, 2, 1, 14] }"
+            "AddView { data: [5, 17, 2, 13, 2, 1, 15, 3, 5, 0, 0, 0, 1, 45, 2, 1, 16] }"
         );
         assert_eq!(
             x.get_all_symbols(true),
