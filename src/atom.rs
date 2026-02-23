@@ -186,7 +186,7 @@ impl<T> DefaultNamespace<T> {
             s.file = self.file.clone();
             s.line = self.line;
             s
-        } else if State::BUILTIN_SYMBOL_NAMES.contains(&s) {
+        } else if State::BUILTIN_NAMES_AND_ALIASES.contains(&s) {
             NamespacedSymbol {
                 symbol: format!("symbolica::{s}").into(),
                 namespace: "symbolica".into(),
@@ -438,6 +438,7 @@ pub struct SymbolBuilder {
     symbol: NamespacedSymbol,
     attributes: Option<Cow<'static, [SymbolAttribute]>>,
     tags: Vec<String>,
+    aliases: Vec<String>,
     normalization_function: Option<NormalizationFunction>,
     print_function: Option<PrintFunction>,
     derivative_function: Option<DerivativeFunction>,
@@ -453,6 +454,7 @@ impl SymbolBuilder {
             symbol,
             attributes: None,
             tags: vec![],
+            aliases: vec![],
             normalization_function: None,
             print_function: None,
             derivative_function: None,
@@ -489,6 +491,20 @@ impl SymbolBuilder {
     /// ```
     pub fn with_tags<T: AsRef<[U]>, U: AsRef<str>>(mut self, tags: T) -> Self {
         self.tags = tags.as_ref().iter().map(|x| x.as_ref().into()).collect();
+        self
+    }
+
+    /// Set symbol aliases. All aliases will refer to the same symbol.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::{atom::{Symbol, SymbolAttribute}, wrap_symbol};
+    ///
+    /// let f = Symbol::new(wrap_symbol!("f")).with_aliases(["alias1", "alias2"]).build().unwrap();
+    /// ```
+    pub fn with_aliases<T: AsRef<[U]>, U: AsRef<str>>(mut self, aliases: T) -> Self {
+        self.aliases = aliases.as_ref().iter().map(|x| x.as_ref().into()).collect();
         self
     }
 
@@ -655,6 +671,7 @@ impl SymbolBuilder {
             && self.print_function.is_none()
             && self.derivative_function.is_none()
             && self.tags.is_empty()
+            && self.aliases.is_empty()
             && self.user_data.is_none()
         {
             state.get_symbol(self.symbol)
@@ -666,6 +683,7 @@ impl SymbolBuilder {
                 self.print_function,
                 self.derivative_function,
                 self.tags,
+                self.aliases,
                 self.user_data,
             )
         }
@@ -955,6 +973,10 @@ impl Symbol {
     /// Get all tags of the symbol.
     pub fn get_tags(&self) -> &[String] {
         &self.get_global_data().tags
+    }
+
+    pub fn get_aliases(&self) -> &[String] {
+        &self.get_global_data().aliases
     }
 
     /// Check if the symbol has the tag `tag`.
@@ -2501,6 +2523,15 @@ macro_rules! tag {
 /// ```
 /// Tags can be used to create logical groups and can be queried and filtered on.
 ///
+/// ### Aliases
+/// You can set aliases using `aliases`:
+/// ```no_run
+/// use symbolica::{symbol, tag};
+/// let x = symbol!("x", aliases = ["alias1", "alias2"]);
+/// ```
+///
+/// All aliases will refer to the same symbol.
+///
 /// ### Normalization
 /// You can specify a normalization function for the symbol using `norm` flag:
 ///
@@ -2698,6 +2729,9 @@ macro_rules! symbol_set_attr {
     };
     ($b: expr, tags = $tags: expr) => {
         $b.with_tags($tags)
+    };
+    ($b: expr, aliases = $aliases: expr) => {
+        $b.with_aliases($aliases)
     };
 }
 

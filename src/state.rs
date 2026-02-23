@@ -34,7 +34,7 @@ use crate::{
 };
 
 pub(crate) const SYMBOLICA_MAGIC: u32 = 0x37871367;
-pub(crate) const EXPORT_FORMAT_VERSION: u16 = 2;
+pub(crate) const EXPORT_FORMAT_VERSION: u16 = 3;
 
 /// An id for a given finite field in a registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,6 +76,7 @@ pub(crate) struct SymbolData {
     pub(crate) custom_normalization: Option<NormalizationFunction>,
     pub(crate) custom_print: Option<PrintFunction>,
     pub(crate) custom_derivative: Option<DerivativeFunction>,
+    pub(crate) aliases: Vec<std::string::String>,
     pub(crate) tags: Vec<std::string::String>,
     pub(crate) user_data: UserData,
 }
@@ -151,6 +152,42 @@ impl State {
         Symbol::SEP_STR,
     ];
 
+    const BUILTIN_SYMBOL_ALIASES: [Option<&'static str>; 14] = [
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some("symbolica::pi"),
+        None,
+    ];
+
+    /// The list of built-in symbols.
+    pub(crate) const BUILTIN_NAMES_AND_ALIASES: [&'static str; 15] = [
+        "arg",
+        "coeff",
+        "exp",
+        "log",
+        "sin",
+        "cos",
+        "sqrt",
+        "conj",
+        "abs",
+        "if",
+        "der",
+        Symbol::E_STR,
+        Symbol::PI_STR,
+        Symbol::SEP_STR,
+        "pi",
+    ];
+
     /// The list of built-in symbols.
     pub const BUILTIN_SYMBOLS: [Symbol; 14] = [
         Self::ARG,
@@ -180,9 +217,10 @@ impl State {
             str_to_id: HashMap::new(),
         };
 
-        for (name, symbol) in Self::BUILTIN_SYMBOL_NAMES
+        for ((name, symbol), alias) in Self::BUILTIN_SYMBOL_NAMES
             .iter()
             .zip(&Self::BUILTIN_SYMBOLS)
+            .zip(&Self::BUILTIN_SYMBOL_ALIASES)
         {
             let r = wrap_symbol!(name);
 
@@ -197,12 +235,17 @@ impl State {
                     custom_print: None,
                     custom_derivative: None,
                     tags: vec![],
+                    aliases: alias.map(|a| vec![a.to_string()]).unwrap_or_default(),
                     user_data: UserData::None,
                 },
             ));
             assert_eq!(symbol.get_id() as usize, index);
 
             state.str_to_id.insert(r.symbol.into(), *symbol);
+
+            if let Some(alias) = alias {
+                state.str_to_id.insert((*alias).into(), *symbol);
+            }
         }
 
         #[cfg(test)]
@@ -240,6 +283,7 @@ impl State {
                 None,
                 None,
                 vec![],
+                vec![],
                 None,
             );
         }
@@ -250,6 +294,7 @@ impl State {
                 None,
                 None,
                 None,
+                vec![],
                 vec![],
                 None,
             );
@@ -262,6 +307,7 @@ impl State {
                 None,
                 None,
                 vec![],
+                vec![],
                 None,
             );
         }
@@ -273,6 +319,7 @@ impl State {
                 None,
                 None,
                 vec![],
+                vec![],
                 None,
             );
         }
@@ -283,6 +330,7 @@ impl State {
                 None,
                 None,
                 None,
+                vec![],
                 vec![],
                 None,
             );
@@ -308,9 +356,10 @@ impl State {
 
         let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
 
-        for (name, symbol) in Self::BUILTIN_SYMBOL_NAMES
+        for ((name, symbol), alias) in Self::BUILTIN_SYMBOL_NAMES
             .iter()
             .zip(&Self::BUILTIN_SYMBOLS)
+            .zip(&Self::BUILTIN_SYMBOL_ALIASES)
         {
             let r = wrap_symbol!(name);
 
@@ -325,12 +374,17 @@ impl State {
                     custom_print: None,
                     custom_derivative: None,
                     tags: vec![],
+                    aliases: alias.map(|a| vec![a.to_string()]).unwrap_or_default(),
                     user_data: UserData::None,
                 },
             ));
             assert_eq!(symbol.get_id() as usize, index - offset);
 
             state.str_to_id.insert(r.symbol.into(), *symbol);
+
+            if let Some(alias) = alias {
+                state.str_to_id.insert((*alias).into(), *symbol);
+            }
         }
 
         #[cfg(test)]
@@ -413,6 +467,7 @@ impl State {
                         file: name.file,
                         namespace: name.namespace,
                         line: name.line,
+                        aliases: vec![],
                         custom_normalization: None,
                         custom_print: None,
                         custom_derivative: None,
@@ -446,6 +501,7 @@ impl State {
         print_function: Option<PrintFunction>,
         derivative_function: Option<DerivativeFunction>,
         tags: Vec<std::string::String>,
+        aliases: Vec<std::string::String>,
         user_data: Option<UserData>,
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
@@ -478,6 +534,7 @@ impl State {
                     && print_function.is_none()
                     && derivative_function.is_none()
                     && tags == r.get_tags()
+                    && aliases == r.get_aliases()
                     && user_data.as_ref().unwrap_or(&UserData::None)
                         == &ID_TO_STR[r.get_id() as usize].1.user_data
                 {
@@ -551,6 +608,14 @@ impl State {
                         ));
                     }
 
+                    if aliases != r.get_aliases() {
+                        diff_attr.push_str(&format!(
+                            "\t- aliases: {:?} vs {:?}\n",
+                            r.get_aliases(),
+                            aliases
+                        ));
+                    }
+
                     if normalization_function.is_some() {
                         diff_attr.push_str("\t- new normalization function specified.\n");
                     }
@@ -609,18 +674,52 @@ impl State {
                     SymbolData {
                         name: v.key().clone(),
                         file: name.file,
-                        namespace: name.namespace,
+                        namespace: name.namespace.clone(),
                         line: name.line,
                         custom_normalization: normalization_function,
                         custom_print: print_function,
                         custom_derivative: derivative_function,
                         tags,
+                        aliases: aliases.clone(),
                         user_data: user_data.unwrap_or(UserData::None),
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
 
                 v.insert(new_symbol);
+
+                for mut alias in aliases {
+                    if !alias.contains("::") {
+                        alias = format!("{}::{}", name.namespace, alias);
+                    } else if !alias.starts_with(name.namespace.as_ref()) {
+                        return Err(format!(
+                            "Alias {alias} defined in different namespace from main symbol namespace {}",
+                            name.namespace
+                        )
+                        .into());
+                    }
+
+                    match self.str_to_id.entry(alias.into()) {
+                        Entry::Occupied(o) => {
+                            let old_symbol = o.get();
+                            let old_data = old_symbol.get_global_data();
+                            if old_data.file.is_empty() {
+                                return Err(
+                                    format!("Alias {} already defined before", o.key()).into()
+                                );
+                            } else {
+                                return Err(format!(
+                                    "Alias {} already defined  here: {}:{}.",
+                                    old_data.name, old_data.file, old_data.line
+                                )
+                                .into());
+                            }
+                        }
+                        Entry::Vacant(v) => {
+                            v.insert(new_symbol);
+                        }
+                    }
+                }
 
                 Ok(new_symbol)
             }
@@ -748,6 +847,12 @@ impl State {
                 dest.write_all(t.as_bytes())?;
             }
 
+            dest.write_u16::<LittleEndian>(s.get_aliases().len() as u16)?;
+            for t in s.get_aliases() {
+                dest.write_u32::<LittleEndian>(t.len() as u32)?;
+                dest.write_all(t.as_bytes())?;
+            }
+
             s.get_data().write(dest)?;
         }
 
@@ -859,6 +964,21 @@ impl State {
                 tags.push(tag);
             }
 
+            let mut aliases = vec![];
+            let num_aliases = source.read_u16::<LittleEndian>()?;
+
+            for _ in 0..num_aliases {
+                let l = source.read_u32::<LittleEndian>()?;
+                let mut v = vec![0; l as usize];
+                source.read_exact(&mut v)?;
+
+                let alias: String = std::string::String::from_utf8(v)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                    .into();
+
+                aliases.push(alias);
+            }
+
             let extra_data = UserData::read(&mut *source)?;
 
             attributes.clear();
@@ -897,6 +1017,7 @@ impl State {
                 .with_attributes(attributes.clone())
                 .with_tags(tags.clone())
                 .with_user_data(extra_data.clone())
+                .with_aliases(aliases.clone())
                 .build()
                 {
                     Ok(id) => {

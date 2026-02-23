@@ -85,6 +85,7 @@ def S(name: str,
       is_integer: Optional[bool] = None,
       is_positive: Optional[bool] = None,
       tags: Optional[Sequence[str]] = None,
+      aliases: Optional[Sequence[str]] = None,
       custom_normalization: Optional[Transformer] = None,
       custom_print: Optional[Callable[..., Optional[str]]] = None,
       custom_derivative: Optional[Callable[[
@@ -172,6 +173,8 @@ def S(name: str,
         Set to true if the symbol is a positive number.
     tags: Optional[Sequence[str]] = None
         A list of tags to associate with the symbol.
+    aliases: Optional[Sequence[str]] = None
+        A list of aliases to associate with the symbol.
     custom_normalization : Optional[Transformer]
         A transformer that is called after every normalization. Note that the symbol
         name cannot be used in the transformer as this will lead to a definition of the
@@ -497,6 +500,7 @@ class Expression:
                is_integer: Optional[bool] = None,
                is_positive: Optional[bool] = None,
                tags: Optional[Sequence[str]] = None,
+               aliases: Optional[Sequence[str]] = None,
                custom_normalization: Optional[Transformer] = None,
                custom_print: Optional[Callable[..., Optional[str]]] = None,
                custom_derivative: Optional[Callable[[
@@ -584,6 +588,8 @@ class Expression:
             Set to true if the symbol is a positive number.
         tags: Optional[Sequence[str]]
             A list of tags to associate with the symbol.
+        aliases: Optional[Sequence[str]]
+            A list of aliases to associate with the symbol.
         custom_normalization : Optional[Transformer]
             A transformer that is called after every normalization. Note that the symbol
             name cannot be used in the transformer as this will lead to a definition of the
