@@ -1772,11 +1772,12 @@ impl<R: Into<Rational>> Add<R> for Float {
             return self;
         }
 
-        if rhs.denominator_ref().is_one() {
-            let Some(e1) = self.0.get_exp() else {
-                return self + rhs;
-            };
+        let Some(e1) = self.0.get_exp() else {
+            let np = self.prec();
+            return (self.0 + rhs.to_multi_prec_float(np).0).into();
+        };
 
+        if rhs.denominator_ref().is_one() {
             let e2 = get_bits(&rhs.numerator_ref());
             let old_prec = self.prec();
 
@@ -1796,11 +1797,6 @@ impl<R: Into<Rational>> Add<R> for Float {
 
             return r.into();
         }
-
-        let Some(e1) = self.0.get_exp() else {
-            let np = self.prec();
-            return (self.0 + rhs.to_multi_prec_float(np).0).into();
-        };
 
         // TODO: check off-by-one errors
         let e2 = get_bits(rhs.numerator_ref()) - get_bits(rhs.denominator_ref());
