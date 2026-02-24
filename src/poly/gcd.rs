@@ -2337,31 +2337,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 gp = gp.mul_coeff(ap.ring.div(&gammap, &gpc));
                 debug!("gp: {} mod {}", gp, gp.ring.get_prime());
 
-                // use chinese remainder theorem to merge coefficients and map back to Z
-                // terms could be missing in gp, but not in gm (TODO: check this?)
-                let mut gpi = 0;
-                for t in 0..gm.nterms() {
-                    let gpc = if gm.exponents(t) == gp.exponents(gpi) {
-                        gpi += 1;
-                        gp.coefficients[gpi - 1]
-                    } else {
-                        ap.ring.zero()
-                    };
-
-                    let gmc = &mut gm.coefficients[t];
-                    let coeff = if gmc.is_negative() {
-                        self.ring.add(&*gmc, &m)
-                    } else {
-                        gmc.clone()
-                    };
-
-                    *gmc = Integer::chinese_remainder(
-                        coeff,
-                        Integer::from_finite_field(&gp.ring, gpc),
-                        m.clone(),
-                        Integer::from_prime(&gp.ring),
-                    );
-                }
+                let gp_i = gp.map_coeff(|c| gp.ring.to_integer(c), self.ring.clone());
+                gm = gm.chinese_remainder(&gp_i, &m, &gp.ring.get_prime().to_integer().into());
 
                 self.ring.mul_assign(&mut m, &Integer::from_prime(&gp.ring));
 
@@ -2776,27 +2753,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     h = hz;
                     m = p.get_prime().into();
                 } else {
-                    // FIXME: assumes that there are no missing terms in gm
-                    let mut gpi = 0;
-                    for t in 0..h.nterms() {
-                        let gpc = if h.exponents(t) == hz.exponents(gpi) {
-                            gpi += 1;
-                            hz.coefficients[gpi - 1].clone()
-                        } else {
-                            0.into()
-                        };
-
-                        let gmc = &mut h.coefficients[t];
-                        let coeff = if gmc.is_negative() {
-                            self.ring.add(&*gmc, &m)
-                        } else {
-                            gmc.clone()
-                        };
-
-                        *gmc =
-                            Integer::chinese_remainder(coeff, gpc, m.clone(), p.get_prime().into());
-                    }
-
+                    h = h.chinese_remainder(&hz, &m, &p.get_prime().into());
                     m *= p.get_prime();
                 }
 
@@ -3277,27 +3234,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     h = hz;
                     m = p.get_prime().into();
                 } else {
-                    // FIXME: assumes that there are no missing terms in gm
-                    let mut gpi = 0;
-                    for t in 0..h.nterms() {
-                        let gpc = if h.exponents(t) == hz.exponents(gpi) {
-                            gpi += 1;
-                            hz.coefficients[gpi - 1].clone()
-                        } else {
-                            0.into()
-                        };
-
-                        let gmc = &mut h.coefficients[t];
-                        let coeff = if gmc.is_negative() {
-                            self.ring.add(&*gmc, &m)
-                        } else {
-                            gmc.clone()
-                        };
-
-                        *gmc =
-                            Integer::chinese_remainder(coeff, gpc, m.clone(), p.get_prime().into());
-                    }
-
+                    h = h.chinese_remainder(&hz, &m, &p.get_prime().into());
                     m *= p.get_prime();
                 }
 

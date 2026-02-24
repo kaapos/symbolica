@@ -4430,6 +4430,74 @@ impl<R: EuclideanDomain, E: Exponent> MultivariatePolynomial<AlgebraicExtension<
     }
 }
 
+impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
+    /// Compute the polynomial that is congruent to `self` modulo `m` and `other` modulo `p` using the Chinese Remainder Theorem.
+    pub fn chinese_remainder(&self, other: &Self, m: &Integer, p: &Integer) -> Self {
+        let mut i = 0;
+        let mut j = 0;
+
+        let mut res = self.zero();
+
+        while i < self.nterms() || j < other.nterms() {
+            let (exp, mut c1, mut c2) = if i < self.nterms() && j < other.nterms() {
+                match self.exponents(i).cmp(&other.exponents(j)) {
+                    std::cmp::Ordering::Equal => {
+                        i += 1;
+                        j += 1;
+                        (
+                            self.exponents(i - 1),
+                            self.coefficients[i - 1].clone(),
+                            other.coefficients[j - 1].clone(),
+                        )
+                    }
+                    std::cmp::Ordering::Less => {
+                        i += 1;
+                        (
+                            self.exponents(i - 1),
+                            self.coefficients[i - 1].clone(),
+                            0.into(),
+                        )
+                    }
+                    std::cmp::Ordering::Greater => {
+                        j += 1;
+                        (
+                            other.exponents(j - 1),
+                            0.into(),
+                            other.coefficients[j - 1].clone(),
+                        )
+                    }
+                }
+            } else if i < self.nterms() {
+                i += 1;
+                (
+                    self.exponents(i - 1),
+                    self.coefficients[i - 1].clone(),
+                    0.into(),
+                )
+            } else {
+                j += 1;
+                (
+                    other.exponents(j - 1),
+                    0.into(),
+                    other.coefficients[j - 1].clone(),
+                )
+            };
+
+            if c1.is_negative() {
+                c1 += m;
+            }
+            if c2.is_negative() {
+                c2 += p;
+            }
+
+            let coeff = Integer::chinese_remainder(c1, c2, m.clone(), p.clone());
+            res.append_monomial(coeff, exp);
+        }
+
+        res
+    }
+}
+
 impl<E: Exponent> From<&MultivariatePolynomial<IntegerRing, E>>
     for MultivariatePolynomial<RationalField, E>
 {
