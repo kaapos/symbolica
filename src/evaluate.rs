@@ -17,7 +17,7 @@ use std::{
 
 use crate::{
     LicenseManager,
-    atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
+    atom::{Atom, AtomCore, AtomView, Indeterminate, KeyLookup, Symbol},
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
     domains::{
@@ -115,11 +115,11 @@ impl<T> FunctionMap<T> {
     }
 
     /// Register a function without tags. `rename` is the name used in exported code.
-    pub fn add_function(
+    pub fn add_function<A: Into<Indeterminate>>(
         &mut self,
         name: Symbol,
         rename: String,
-        args: Vec<Symbol>,
+        args: Vec<A>,
         body: Atom,
     ) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
@@ -143,7 +143,7 @@ impl<T> FunctionMap<T> {
             ConstOrExpr::Expr(Expr {
                 name: rename,
                 tag_len: 0,
-                args,
+                args: args.into_iter().map(|x| x.into()).collect(),
                 body,
             }),
         );
@@ -152,12 +152,12 @@ impl<T> FunctionMap<T> {
     }
 
     /// Register a function, where the first arguments are `tags` instead of arguments. `rename` is the name used in exported code.
-    pub fn add_tagged_function(
+    pub fn add_tagged_function<A: Into<Indeterminate>>(
         &mut self,
         name: Symbol,
         tags: Vec<Atom>,
         rename: String,
-        args: Vec<Symbol>,
+        args: Vec<A>,
         body: Atom,
     ) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
@@ -182,7 +182,7 @@ impl<T> FunctionMap<T> {
             ConstOrExpr::Expr(Expr {
                 name: rename,
                 tag_len,
-                args,
+                args: args.into_iter().map(|x| x.into()).collect(),
                 body,
             }),
         );
@@ -292,7 +292,7 @@ enum ConstOrExpr<T> {
 struct Expr {
     name: String,
     tag_len: usize,
-    args: Vec<Symbol>,
+    args: Vec<Indeterminate>,
     body: Atom,
 }
 
@@ -394,7 +394,7 @@ struct SplitExpression<T> {
 /// A tree representation of multiple expressions, including function definitions.
 #[derive(Debug, Clone)]
 pub struct EvalTree<T> {
-    functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
+    functions: Vec<(String, Vec<Indeterminate>, SplitExpression<T>)>,
     external_functions: Vec<String>,
     expressions: SplitExpression<T>,
     param_count: usize,
@@ -9801,185 +9801,6 @@ impl Default for InlineASM {
     }
 }
 
-impl<T: FloatLike> EvalTree<T> {
-    /// Export the evaluation tree to C++ code. For much improved performance,
-    /// optimize the tree instead.
-    pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
-        let mut res = if include_header {
-            "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string()
-        } else {
-            String::new()
-        };
-
-        for (name, arg_names, body) in &self.functions {
-            let mut args = arg_names
-                .iter()
-                .map(|x| " T ".to_string() + x.to_string().as_str())
-                .collect::<Vec<_>>();
-            args.insert(0, "T* params".to_string());
-
-            res += &format!(
-                "\ntemplate<typename T>\nT {}({}) {{\n",
-                name,
-                args.join(",")
-            );
-
-            for (i, s) in body.subexpressions.iter().enumerate() {
-                res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, arg_names));
-            }
-
-            if body.tree.len() > 1 {
-                panic!("Tensor functions not supported yet");
-            }
-
-            let ret = self.export_cpp_impl(&body.tree[0], arg_names);
-            res += &format!("\treturn {ret};\n}}\n");
-        }
-
-        res += &format!("\ntemplate<typename T>\nvoid {function_name}(T* params, T* out) {{\n");
-
-        for (i, s) in self.expressions.subexpressions.iter().enumerate() {
-            res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));
-        }
-
-        for (i, e) in self.expressions.tree.iter().enumerate() {
-            res += &format!("\tout[{}] = {};\n", i, self.export_cpp_impl(e, &[]));
-        }
-
-        res += "\treturn;\n}\n";
-
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {function_name}_double(double* params, double* out) {{\n\t\t{function_name}(params, out);\n\t\treturn;\n\t}}\n}}\n"
-        );
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{function_name}(params, out);\n\t\treturn;\n\t}}\n}}\n"
-        );
-
-        res
-    }
-
-    fn export_cpp_impl(&self, expr: &Expression<T>, args: &[Symbol]) -> String {
-        match expr {
-            Expression::Const(c) => {
-                format!("T({c})")
-            }
-            Expression::Parameter(p) => {
-                format!("params[{p}]")
-            }
-            Expression::Eval(id, e_args) => {
-                let mut r = format!("{}(params", self.functions[*id].0);
-
-                for a in e_args {
-                    r.push_str(", ");
-                    r += &self.export_cpp_impl(a, args);
-                }
-                r.push(')');
-                r
-            }
-            Expression::Add(a) => {
-                let mut r = "(".to_string();
-                r += &self.export_cpp_impl(&a[0], args);
-                for arg in &a[1..] {
-                    r.push_str(" + ");
-                    r += &self.export_cpp_impl(arg, args);
-                }
-                r.push(')');
-                r
-            }
-            Expression::Mul(m) => {
-                let mut r = "(".to_string();
-                r += &self.export_cpp_impl(&m[0], args);
-                for arg in &m[1..] {
-                    r.push_str(" * ");
-                    r += &self.export_cpp_impl(arg, args);
-                }
-                r.push(')');
-                r
-            }
-            Expression::Pow(p) => {
-                let mut r = "pow(".to_string();
-                r += &self.export_cpp_impl(&p.0, args);
-                r.push_str(", ");
-                r.push_str(&p.1.to_string());
-                r.push(')');
-                r
-            }
-            Expression::Powf(p) => {
-                let mut r = "powf(".to_string();
-                r += &self.export_cpp_impl(&p.0, args);
-                r.push_str(", ");
-                r += &self.export_cpp_impl(&p.1, args);
-                r.push(')');
-                r
-            }
-            Expression::ReadArg(s) => args[*s].to_string(),
-            Expression::BuiltinFun(s, a) => match s.0.get_id() {
-                Symbol::EXP_ID => {
-                    let mut r = "exp(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                Symbol::LOG_ID => {
-                    let mut r = "log(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                Symbol::SIN_ID => {
-                    let mut r = "sin(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                Symbol::COS_ID => {
-                    let mut r = "cos(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                Symbol::SQRT_ID => {
-                    let mut r = "sqrt(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                Symbol::CONJ_ID => {
-                    let mut r = "conj(".to_string();
-                    r += &self.export_cpp_impl(a, args);
-                    r.push(')');
-                    r
-                }
-                _ => unreachable!(),
-            },
-            Expression::SubExpression(id) => {
-                format!("Z{id}_")
-            }
-            Expression::ExternalFun(name, a) => {
-                let mut r = name.to_string();
-                r.push('(');
-                r += &a
-                    .iter()
-                    .map(|x| self.export_cpp_impl(x, args))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                r.push(')');
-                r
-            }
-            Expression::IfElse(b) => {
-                let mut r = "(".to_string();
-                r += &self.export_cpp_impl(&b.0, args);
-                r.push_str(" ? (");
-                r += &self.export_cpp_impl(&b.1, args);
-                r.push_str(") : (");
-                r += &self.export_cpp_impl(&b.2, args);
-                r.push_str("))");
-                r
-            }
-        }
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Convert nested expressions to a tree.
     pub fn to_evaluation_tree(
@@ -10033,17 +9854,21 @@ impl<'a> AtomView<'a> {
         &self,
         fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
-        args: &[Symbol],
-        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<Complex<Rational>>)>,
+        args: &[Indeterminate],
+        funcs: &mut Vec<(
+            String,
+            Vec<Indeterminate>,
+            SplitExpression<Complex<Rational>>,
+        )>,
     ) -> Result<Expression<Complex<Rational>>, String> {
-        if let AtomView::Var(v) = self {
-            if let Some(p) = args.iter().position(|s| *s == v.get_symbol()) {
+        if matches!(self, AtomView::Var(_) | AtomView::Fun(_)) {
+            if let Some(p) = args.iter().position(|s| *self == s.as_view()) {
                 return Ok(Expression::ReadArg(p));
             }
-        }
 
-        if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
-            return Ok(Expression::Parameter(p));
+            if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
+                return Ok(Expression::Parameter(p));
+            }
         }
 
         if let Some(c) = fn_map.get_constant(*self) {

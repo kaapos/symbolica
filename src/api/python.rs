@@ -61,7 +61,7 @@ use pyo3::pymodule;
 use crate::{
     LicenseManager,
     atom::{
-        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, ListIterator, Symbol,
+        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, Indeterminate, ListIterator, Symbol,
         SymbolAttribute, UserData, UserDataKey,
     },
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
@@ -3510,7 +3510,10 @@ impl<'py> FromPyObject<'_, 'py> for PolyVariable {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        Ok(PolyVariable::Symbol(Symbol::extract(ob)?))
+        PythonExpression::extract(ob)?
+            .expr
+            .try_into()
+            .map_err(|_| exceptions::PyTypeError::new_err("Not a valid polynomial variable"))
     }
 }
 
@@ -7222,11 +7225,13 @@ impl PythonExpression {
                     "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
-                .iter()
-                .map(|x| {
-                    x.get_id().ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {symbol}",
-                    )))
+                .into_iter()
+                .map(|x| match x {
+                    PolyVariable::Symbol(s) => Ok(Indeterminate::Symbol(s, s.into())),
+                    PolyVariable::Function(s, f) => Ok(Indeterminate::Function(s, f)),
+                    _ => Err(exceptions::PyValueError::new_err(format!(
+                        "Bad function argument {x} in function {symbol}",
+                    ))),
                 })
                 .collect::<Result<_, _>>()?;
 
@@ -7445,11 +7450,13 @@ impl PythonExpression {
                     "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
-                .iter()
-                .map(|x| {
-                    x.get_id().ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {symbol}",
-                    )))
+                .into_iter()
+                .map(|x| match x {
+                    PolyVariable::Symbol(s) => Ok(Indeterminate::Symbol(s, s.into())),
+                    PolyVariable::Function(s, f) => Ok(Indeterminate::Function(s, f)),
+                    _ => Err(exceptions::PyValueError::new_err(format!(
+                        "Bad function argument {x} in function {symbol}",
+                    ))),
                 })
                 .collect::<Result<_, _>>()?;
 
