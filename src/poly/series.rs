@@ -1231,8 +1231,15 @@ impl Series<AtomField> {
 
         let c = self.get_trailing_coefficient();
 
-        if pow.is_negative() && c.is_zero() {
-            Err("Cannot invert series with a zero constant term")?;
+        if c.is_zero() {
+            if pow.is_negative() {
+                Err("Cannot invert series with a zero constant term")?;
+            }
+
+            let mut r = self.clone();
+            r.shift *= pow.numerator().to_i64().unwrap() as isize;
+            r.ramification *= pow.denominator().to_i64().unwrap() as usize;
+            return Ok(r);
         }
 
         let c = self.coefficients[0].clone();
