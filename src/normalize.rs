@@ -1420,6 +1420,33 @@ impl AtomView<'_> {
                             // x^0 = 1
                             out.to_num(1.into());
                             break 'pow_simplify;
+                        } else if let CoefficientView::Natural(n, 1, 0, 1) = exp_num
+                            && n % 2 == 0
+                            && let AtomView::Fun(f) = base_handle.as_view()
+                        {
+                            let s = f.get_symbol_id();
+                            if s == Symbol::SQRT_ID && f.get_nargs() == 1 {
+                                let sqrt_arg = f.iter().next().unwrap();
+                                if n == 2 {
+                                    out.set_from_view(&sqrt_arg);
+                                } else {
+                                    let mut pow_h = workspace.new_atom();
+                                    pow_h.to_pow(sqrt_arg, workspace.new_num(n / 2).as_view());
+                                    pow_h.as_view().normalize(workspace, out);
+                                    out.set_from_view(&pow_h.as_view());
+                                }
+
+                                break 'pow_simplify;
+                            } else if s == Symbol::ABS_ID && f.get_nargs() == 1 {
+                                let abs_arg = f.iter().next().unwrap();
+                                if abs_arg.is_real() {
+                                    let mut pow_h = workspace.new_atom();
+                                    pow_h.to_pow(abs_arg, workspace.new_num(n).as_view());
+                                    pow_h.as_view().normalize(workspace, out);
+                                    out.set_from_view(&pow_h.as_view());
+                                    break 'pow_simplify;
+                                }
+                            }
                         }
                     } else if let AtomView::Pow(p_base) = base_handle.as_view()
                         && exp_handle.is_integer()
