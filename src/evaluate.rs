@@ -138,9 +138,11 @@ impl<T> FunctionMap<T> {
             ));
         }
 
+        let id = self.tagged_fn_map.len();
         self.tagged_fn_map.insert(
             (name, vec![]),
             ConstOrExpr::Expr(Expr {
+                id,
                 name: rename,
                 tag_len: 0,
                 args: args.into_iter().map(|x| x.into()).collect(),
@@ -176,10 +178,12 @@ impl<T> FunctionMap<T> {
             ));
         }
 
+        let id = self.tagged_fn_map.len();
         let tag_len = tags.len();
         self.tagged_fn_map.insert(
-            (name, tags),
+            (name, tags.clone()),
             ConstOrExpr::Expr(Expr {
+                id,
                 name: rename,
                 tag_len,
                 args: args.into_iter().map(|x| x.into()).collect(),
@@ -290,6 +294,7 @@ enum ConstOrExpr<T> {
 )]
 #[derive(Clone, Debug)]
 struct Expr {
+    id: usize,
     name: String,
     tag_len: usize,
     args: Vec<Indeterminate>,
@@ -9818,11 +9823,17 @@ impl<'a> AtomView<'a> {
         params: &[Atom],
     ) -> Result<EvalTree<Complex<Rational>>, String> {
         let mut funcs = vec![];
+        let mut func_id_to_index = HashMap::default();
         let tree = exprs
             .iter()
             .map(|t| {
-                t.as_atom_view()
-                    .to_eval_tree_impl(fn_map, params, &[], &mut funcs)
+                t.as_atom_view().to_eval_tree_impl(
+                    fn_map,
+                    params,
+                    &[],
+                    &mut func_id_to_index,
+                    &mut funcs,
+                )
             })
             .collect::<Result<_, _>>()?;
 
@@ -9855,6 +9866,7 @@ impl<'a> AtomView<'a> {
         fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
         args: &[Indeterminate],
+        fn_id_map: &mut HashMap<usize, usize>,
         funcs: &mut Vec<(
             String,
             Vec<Indeterminate>,
@@ -9923,7 +9935,7 @@ impl<'a> AtomView<'a> {
                 {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
+                    let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
                     return Ok(Expression::BuiltinFun(
                         BuiltinSymbol(f.get_symbol()),
@@ -9944,37 +9956,42 @@ impl<'a> AtomView<'a> {
                     ConstOrExpr::External(e, _name) => {
                         let eval_args = f
                             .iter()
-                            .map(|arg| arg.to_eval_tree_impl(fn_map, params, args, funcs))
+                            .map(|arg| {
+                                arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)
+                            })
                             .collect::<Result<_, _>>()?;
                         Ok(Expression::ExternalFun(*e, eval_args))
                     }
                     ConstOrExpr::Expr(Expr {
+                        id,
                         name,
                         tag_len,
                         args: arg_spec,
                         body: e,
                     }) => {
-                        if f.get_nargs() != arg_spec.len() + *tag_len {
+                        if f.get_nargs() != arg_spec.len() + tag_len {
                             return Err(format!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
                                 f.get_symbol().get_name(),
                                 f.get_nargs(),
-                                arg_spec.len() + *tag_len
+                                arg_spec.len() + tag_len
                             ));
                         }
 
                         let eval_args = f
                             .iter()
                             .skip(*tag_len)
-                            .map(|arg| arg.to_eval_tree_impl(fn_map, params, args, funcs))
+                            .map(|arg| {
+                                arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)
+                            })
                             .collect::<Result<_, _>>()?;
 
-                        if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
-                            Ok(Expression::Eval(pos, eval_args))
+                        if let Some(pos) = fn_id_map.get(id) {
+                            Ok(Expression::Eval(*pos, eval_args))
                         } else {
                             let r = e
                                 .as_view()
-                                .to_eval_tree_impl(fn_map, params, arg_spec, funcs)?;
+                                .to_eval_tree_impl(fn_map, params, arg_spec, fn_id_map, funcs)?;
                             funcs.push((
                                 name.clone(),
                                 arg_spec.clone(),
@@ -9983,6 +10000,7 @@ impl<'a> AtomView<'a> {
                                     subexpressions: vec![],
                                 },
                             ));
+                            fn_id_map.insert(*id, funcs.len() - 1);
                             Ok(Expression::Eval(funcs.len() - 1, eval_args))
                         }
                     }
@@ -9999,21 +10017,21 @@ impl<'a> AtomView<'a> {
                         let cond_eval = arg_iter
                             .next()
                             .unwrap()
-                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                            .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
                         if let Expression::Const(c) = &cond_eval {
                             if !c.is_zero() {
                                 let t_eval = arg_iter
                                     .next()
                                     .unwrap()
-                                    .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                                    .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
                                 return Ok(t_eval);
                             } else {
                                 let _ = arg_iter.next().unwrap();
                                 let f_eval = arg_iter
                                     .next()
                                     .unwrap()
-                                    .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                                    .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
                                 return Ok(f_eval);
                             }
                         }
@@ -10021,11 +10039,11 @@ impl<'a> AtomView<'a> {
                         let t_eval = arg_iter
                             .next()
                             .unwrap()
-                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                            .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
                         let f_eval = arg_iter
                             .next()
                             .unwrap()
-                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                            .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
                         Ok(Expression::IfElse(Box::new((cond_eval, t_eval, f_eval))))
                     }
@@ -10033,7 +10051,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.to_eval_tree_impl(fn_map, params, args, funcs)?;
+                let b_eval = b.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
                 if let AtomView::Num(n) = e
                     && let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view()
@@ -10043,13 +10061,13 @@ impl<'a> AtomView<'a> {
                     return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
                 }
 
-                let e_eval = e.to_eval_tree_impl(fn_map, params, args, funcs)?;
+                let e_eval = e.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
                 Ok(Expression::Powf(Box::new((b_eval, e_eval))))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
-                    let a = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
+                    let a = arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
                     if let Expression::Mul(m) = a {
                         muls.extend(m);
                     } else {
@@ -10064,7 +10082,7 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 let mut adds = vec![];
                 for arg in a.iter() {
-                    adds.push(arg.to_eval_tree_impl(fn_map, params, args, funcs)?);
+                    adds.push(arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?);
                 }
 
                 adds.sort();
