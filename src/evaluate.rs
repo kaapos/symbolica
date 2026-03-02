@@ -139,16 +139,15 @@ impl<T> FunctionMap<T> {
         }
 
         let id = self.tagged_fn_map.len();
-        self.tagged_fn_map.insert(
-            (name, vec![]),
+        self.tagged_fn_map.entry((name, vec![])).or_insert_with(|| {
             ConstOrExpr::Expr(Expr {
                 id,
                 name: rename,
                 tag_len: 0,
                 args: args.into_iter().map(|x| x.into()).collect(),
                 body,
-            }),
-        );
+            })
+        });
 
         Ok(())
     }
@@ -180,16 +179,17 @@ impl<T> FunctionMap<T> {
 
         let id = self.tagged_fn_map.len();
         let tag_len = tags.len();
-        self.tagged_fn_map.insert(
-            (name, tags.clone()),
-            ConstOrExpr::Expr(Expr {
-                id,
-                name: rename,
-                tag_len,
-                args: args.into_iter().map(|x| x.into()).collect(),
-                body,
-            }),
-        );
+        self.tagged_fn_map
+            .entry((name, tags.clone()))
+            .or_insert_with(|| {
+                ConstOrExpr::Expr(Expr {
+                    id,
+                    name: rename,
+                    tag_len,
+                    args: args.into_iter().map(|x| x.into()).collect(),
+                    body,
+                })
+            });
 
         Ok(())
     }
