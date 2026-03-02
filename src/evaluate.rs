@@ -10353,7 +10353,7 @@ impl<'a> AtomView<'a> {
 
         let mut rng = MonteCarloRng::new(0, 0);
 
-        if self.has_complex_coefficients() || self.has_roots() {
+        if !self.is_real() {
             let mut vars: HashMap<_, _> = self
                 .get_all_indeterminates(true)
                 .into_iter()
