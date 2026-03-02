@@ -7200,7 +7200,7 @@ impl PythonExpression {
     ///     A map of expressions to constants. The constants should be numerical expressions.
     /// functions: dict[Tuple[Expression, str, Sequence[Expression]], Expression]
     ///     A dictionary of functions. The key is a tuple of the function name, printable name and the argument variables.
-    ///     The value is the function body.
+    ///     The value is the function body. If the function name entry contains arguments, these are considered tags.
     /// params: Sequence[Expression]
     ///     A list of free parameters.
     /// iterations: int, optional
@@ -7270,11 +7270,6 @@ impl PythonExpression {
         }
 
         for ((symbol, rename, args), body) in functions {
-            let symbol = symbol
-                .get_id()
-                .ok_or(exceptions::PyValueError::new_err(format!(
-                    "Bad function name {symbol}",
-                )))?;
             let args: Vec<_> = args
                 .into_iter()
                 .map(|x| match x {
@@ -7286,9 +7281,28 @@ impl PythonExpression {
                 })
                 .collect::<Result<_, _>>()?;
 
-            fn_map
-                .add_function(symbol, rename.clone(), args, body.expr)
-                .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+            match symbol {
+                PolyVariable::Symbol(s) => {
+                    fn_map
+                        .add_function(s, rename.clone(), args, body.expr)
+                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+                }
+                PolyVariable::Function(s, fa) => {
+                    let tags = fa
+                        .as_fun_view()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.to_owned())
+                        .collect();
+
+                    fn_map
+                        .add_tagged_function(s, tags, rename.clone(), args, body.expr)
+                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+                }
+                _ => Err(exceptions::PyValueError::new_err(format!(
+                    "Expected function name instead of {symbol:?}",
+                )))?,
+            }
         }
 
         if let Some(ef) = &external_functions {
@@ -7495,11 +7509,6 @@ impl PythonExpression {
         }
 
         for ((symbol, rename, args), body) in functions {
-            let symbol = symbol
-                .get_id()
-                .ok_or(exceptions::PyValueError::new_err(format!(
-                    "Bad function name {symbol}",
-                )))?;
             let args: Vec<_> = args
                 .into_iter()
                 .map(|x| match x {
@@ -7511,9 +7520,28 @@ impl PythonExpression {
                 })
                 .collect::<Result<_, _>>()?;
 
-            fn_map
-                .add_function(symbol, rename.clone(), args, body.expr)
-                .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+            match symbol {
+                PolyVariable::Symbol(s) => {
+                    fn_map
+                        .add_function(s, rename.clone(), args, body.expr)
+                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+                }
+                PolyVariable::Function(s, fa) => {
+                    let tags = fa
+                        .as_fun_view()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.to_owned())
+                        .collect();
+
+                    fn_map
+                        .add_tagged_function(s, tags, rename.clone(), args, body.expr)
+                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+                }
+                _ => Err(exceptions::PyValueError::new_err(format!(
+                    "Expected function name instead of {symbol:?}",
+                )))?,
+            }
         }
 
         if let Some(ef) = &external_functions {

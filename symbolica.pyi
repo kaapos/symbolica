@@ -2246,7 +2246,7 @@ class Expression:
             A map of expressions to constants. The constants should be numerical expressions.
         functions: dict[Tuple[Expression, str, Sequence[Expression]], Expression]
             A dictionary of functions. The key is a tuple of the function name, printable name and the argument variables.
-            The value is the function body.
+            The value is the function body. If the function name entry contains arguments, these are considered tags.
         params: Sequence[Expression]
             A list of free parameters.
         iterations: int, optional
