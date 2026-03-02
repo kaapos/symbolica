@@ -612,8 +612,18 @@ impl<'a> AtomView<'a> {
             AtomView::Fun(f) => {
                 let s = f.get_symbol();
                 match s.get_id() {
-                    Symbol::EXP_ID => f.iter().next().is_some_and(|arg| arg.is_real()),
-                    Symbol::SQRT_ID => f.iter().next().is_some_and(|arg| arg.is_positive()),
+                    Symbol::EXP_ID | Symbol::SIN_ID | Symbol::COS_ID => {
+                        f.iter().next().is_some_and(|arg| arg.is_real())
+                    }
+                    Symbol::SQRT_ID | Symbol::LOG_ID => {
+                        f.iter().next().is_some_and(|arg| arg.is_positive())
+                    }
+                    Symbol::IF_ID => {
+                        let mut iter = f.iter();
+                        iter.next().is_some()
+                            && iter.next().is_some_and(|arg| arg.is_real())
+                            && iter.next().is_some_and(|arg| arg.is_real())
+                    }
                     _ => s.is_real(),
                 }
             }
@@ -660,6 +670,12 @@ impl<'a> AtomView<'a> {
                 match s.get_id() {
                     Symbol::EXP_ID => f.iter().next().is_some_and(|arg| arg.is_real()),
                     Symbol::SQRT_ID => f.iter().next().is_some_and(|arg| arg.is_positive()),
+                    Symbol::IF_ID => {
+                        let mut iter = f.iter();
+                        iter.next().is_some()
+                            && iter.next().is_some_and(|arg| arg.is_positive())
+                            && iter.next().is_some_and(|arg| arg.is_positive())
+                    }
                     _ => s.is_positive(),
                 }
             }
@@ -986,7 +1002,12 @@ impl<'a> AtomView<'a> {
                 } else {
                     has_roots = true;
                 }
+            } else if let AtomView::Fun(f) = a
+                && f.get_symbol_id() == Symbol::SQRT_ID
+            {
+                has_roots = true;
             }
+
             !has_roots
         });
 
