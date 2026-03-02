@@ -1060,6 +1060,11 @@ impl FormattedPrintMul for MulView<'_> {
             });
 
         if add_num_paren {
+            if print_state.in_sum {
+                print_state.in_sum = false;
+                f.write_char('+')?;
+            }
+
             f.write_char('(')?;
         }
 
