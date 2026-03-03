@@ -518,8 +518,8 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
             (_, Expression::BuiltinFun(_, _)) => std::cmp::Ordering::Greater,
             (Expression::ExternalFun(_, _), _) => std::cmp::Ordering::Less,
             (_, Expression::ExternalFun(_, _)) => std::cmp::Ordering::Greater,
-            (Expression::IfElse(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::IfElse(_)) => std::cmp::Ordering::Greater,
+            (Expression::IfElse(_), _) => std::cmp::Ordering::Greater,
+            (_, Expression::IfElse(_)) => std::cmp::Ordering::Less, // sort last so that parent common subexpressions can be used inside both branches
         }
     }
 }
@@ -655,8 +655,8 @@ impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
             (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
             (HashedExpression::ExternalFun(_, _, _), _) => std::cmp::Ordering::Less,
             (_, HashedExpression::ExternalFun(_, _, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::IfElse(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::IfElse(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::IfElse(_, _), _) => std::cmp::Ordering::Greater,
+            (_, HashedExpression::IfElse(_, _)) => std::cmp::Ordering::Less,
         }
     }
 }
@@ -1228,9 +1228,9 @@ impl<T: Default> ExpressionEvaluator<T> {
         let mut rename_map: Vec<_> = (0..self.reserved_indices).collect();
         let mut removed = 0;
 
-        // for now, do not attempt a replacement if the instruction is in a branch
-        // we do not move the instruction
-        let mut branch_counter = 0;
+        let mut dag_nodes = vec![0]; // store index to parent node
+        let mut current_node = 0;
+
         for (instr, phase) in &self.instructions {
             let new_pos = new_instr.len() + self.reserved_indices;
 
@@ -1246,17 +1246,29 @@ impl<T: Default> ExpressionEvaluator<T> {
 
             if let Some(key) = key {
                 match common_instr.entry(key) {
-                    Entry::Occupied(o) => {
-                        removed += 1;
-                        rename_map.push(*o.get());
-                        i += 1;
-                        continue;
+                    Entry::Occupied(mut o) => {
+                        let (old_pos, branch) = o.get_mut();
+
+                        let mut cur = current_node;
+                        while cur > *branch {
+                            cur = dag_nodes[cur];
+                        }
+
+                        if cur == *branch {
+                            removed += 1;
+                            rename_map.push(*old_pos);
+                            i += 1;
+                            continue;
+                        } else {
+                            // the previous occurrence was in a non-parent branch
+                            // that cannot be reused, so treat this occurrence
+                            // as the first
+                            *old_pos = new_pos;
+                            *branch = current_node;
+                        }
                     }
                     Entry::Vacant(v) => {
-                        // first time finding the key where it is not in a branch
-                        if branch_counter == 0 {
-                            v.insert(new_pos);
-                        }
+                        v.insert((new_pos, current_node));
                     }
                 }
             }
@@ -1297,17 +1309,23 @@ impl<T: Default> ExpressionEvaluator<T> {
                     }
                 }
                 Instr::Join(p, a, b, c) => {
-                    branch_counter -= 1;
+                    current_node = dag_nodes[current_node];
                     *a = rename_map[*a];
                     *b = rename_map[*b];
                     *c = rename_map[*c];
                     *p = new_pos;
                 }
                 Instr::IfElse(c, _) => {
-                    branch_counter += 1;
+                    dag_nodes.push(current_node); // enter if block
+                    current_node = dag_nodes.len() - 1;
                     *c = rename_map[*c];
                 }
-                Instr::Goto(_) | Instr::Label(_) => {}
+                Instr::Goto(_) => {
+                    let parent = dag_nodes[current_node];
+                    dag_nodes.push(parent); // enter else block (included goto and labels)
+                    current_node = dag_nodes.len() - 1;
+                }
+                _ => {}
             }
 
             new_instr.push((s, *phase));
