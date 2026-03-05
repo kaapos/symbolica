@@ -4978,7 +4978,7 @@ class Evaluator:
 
     @classmethod
     def load(cls, evaluator: bytes, external_functions: dict[Tuple[Expression, str], Callable[[
-            Sequence[float | complex]], float | complex]] = {}) -> Evaluator:
+            Sequence[float | complex]], float | complex]] = {}, decimal_digit_precision: int = 100) -> Evaluator:
         """Load the evaluator into memory, preparing it for evaluation."""
 
     def save(self) -> bytes:
