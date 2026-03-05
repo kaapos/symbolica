@@ -7408,7 +7408,7 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
-        let external_functions_complex = if let Some(ef) = external_functions {
+        let external_functions_complex = if let Some(ef) = external_functions.as_ref() {
             ef.clone()
                 .into_iter()
                 .map(move |((_, name), f)| {
@@ -7446,6 +7446,9 @@ impl PythonExpression {
             eval: eval_f64,
             eval_complex,
             eval_complex_ext,
+            eval_arb_prec: None,
+            eval_arb_prec_complex: None,
+            external_functions: external_functions.unwrap_or(BTreeMap::default()),
         })
     }
 
@@ -7494,7 +7497,7 @@ impl PythonExpression {
             type_repr = "typing.Optional[dict[tuple[Expression, str], typing.Callable[[
             typing.Sequence[float | complex]], float | complex]]]"
         ))]
-        external_functions: Option<HashMap<(PolyVariable, String), Py<PyAny>>>,
+        external_functions: Option<BTreeMap<(PolyVariable, String), Py<PyAny>>>,
         conditionals: Option<Vec<PolyVariable>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
@@ -7646,7 +7649,7 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
-        let external_functions_complex = if let Some(ef) = external_functions {
+        let external_functions_complex = if let Some(ef) = external_functions.as_ref() {
             ef.clone()
                 .into_iter()
                 .map(move |((_, name), f)| {
@@ -7684,6 +7687,9 @@ impl PythonExpression {
             eval: eval_f64,
             eval_complex,
             eval_complex_ext,
+            eval_arb_prec: None,
+            eval_arb_prec_complex: None,
+            external_functions: external_functions.unwrap_or(BTreeMap::default()),
         })
     }
 
@@ -15952,6 +15958,12 @@ pub struct PythonExpressionEvaluator {
     pub eval: Option<ExpressionEvaluatorWithExternalFunctions<f64>>,
     pub eval_complex: ExpressionEvaluator<Complex<f64>>,
     pub eval_complex_ext: ExpressionEvaluatorWithExternalFunctions<Complex<f64>>,
+    pub eval_arb_prec: Option<(u32, ExpressionEvaluatorWithExternalFunctions<Float>)>,
+    pub eval_arb_prec_complex: Option<(
+        u32,
+        ExpressionEvaluatorWithExternalFunctions<Complex<Float>>,
+    )>,
+    pub external_functions: BTreeMap<(PolyVariable, String), Py<PyAny>>,
 }
 
 #[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
@@ -15965,6 +15977,9 @@ impl PythonExpressionEvaluator {
             eval: self.eval.clone(),
             eval_complex: self.eval_complex.clone(),
             eval_complex_ext: self.eval_complex_ext.clone(),
+            eval_arb_prec: self.eval_arb_prec.clone(),
+            eval_arb_prec_complex: self.eval_arb_prec_complex.clone(),
+            external_functions: self.external_functions.clone(),
         }
     }
 
@@ -16049,6 +16064,9 @@ impl PythonExpressionEvaluator {
             eval: eval_f64,
             eval_complex,
             eval_complex_ext,
+            eval_arb_prec: None,
+            eval_arb_prec_complex: None,
+            external_functions,
         })
     }
 
@@ -16305,11 +16323,25 @@ impl PythonExpressionEvaluator {
         self.eval_complex_ext
             .update_stack(self.eval_complex.clone());
 
+        self.eval_arb_prec = None;
+        self.eval_arb_prec_complex = None;
+
         Ok(())
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate`.
+    /// Evaluate the expression for multiple inputs and return the result.
+    /// For best performance, use `numpy` arrays instead of lists.
+    ///
+    /// Examples
+    /// --------
+    /// Evaluate the function for three sets of inputs:
+    ///
+    /// >>> from symbolica import *
+    /// >>> import numpy as np
+    /// >>> ev = E('x * y + 2').evaluator({}, {}, [S('x'), S('y')])
+    /// >>> print(ev.evaluate(np.array([1., 2., 3., 4., 5., 6.]).reshape((3, 2))))
+    ///
+    /// Yields`[[ 4.] [ 8.] [14.]]`
     #[gen_stub(override_return_type(
         type_repr = "numpy.typing.NDArray[numpy.float64]",
         imports = ("numpy.typing", "numpy")
@@ -16367,8 +16399,90 @@ impl PythonExpressionEvaluator {
         Ok(out.into_pyarray(py))
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate_complex`.
+    /// Evaluate the expression for a single input with the given decimal digit precision and return the result.
+    ///
+    /// Examples
+    /// --------
+    /// Evaluate the function for a single input with 50 digits of precision:
+    ///
+    /// >>> from symbolica import *
+    /// >>> ev = E('x^2').evaluator({}, {}, [S('x')])
+    /// >>> print(ev.evaluate_with_prec([Decimal('1.234567890121223456789981273238947212312338947923')], 50))
+    ///
+    /// Yields `1.524157875318369274550121833760353508310334033629`
+    #[gen_stub(override_return_type(type_repr = "list[decimal.Decimal]", imports = ("decimal")))]
+    fn evaluate_with_prec<'py>(
+        &mut self,
+        inputs: Vec<PythonMultiPrecisionFloat>,
+        decimal_digit_precision: u32,
+    ) -> PyResult<Vec<PythonMultiPrecisionFloat>> {
+        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+
+        if self.eval.is_none() {
+            return Err(exceptions::PyValueError::new_err(
+                "Evaluator contains complex coefficients. Use evaluate_complex_flat instead.",
+            ));
+        }
+
+        if self.eval_arb_prec.is_none() || self.eval_arb_prec.as_ref().unwrap().0 != prec {
+            // build a new arb prec evaluator with the desired precision
+            let external_functions_float = self
+                .external_functions
+                .clone()
+                .into_iter()
+                .map(move |((_, name), f)| {
+                    let ff: Box<dyn ExternalFunction<Float>> = Box::new(move |args| {
+                        let args_wrap: Vec<PythonMultiPrecisionFloat> =
+                            args.iter().map(|x| x.clone().into()).collect();
+                        Python::attach(|py| {
+                            f.call1(py, (args_wrap,))
+                                .unwrap()
+                                .extract::<PythonMultiPrecisionFloat>(py)
+                                .unwrap()
+                                .0
+                        })
+                    });
+
+                    (name.clone(), ff)
+                })
+                .collect();
+
+            self.eval_arb_prec = Some((
+                prec,
+                self.eval_rat
+                    .clone()
+                    .map_coeff(&|x| x.re.to_multi_prec_float(prec))
+                    .with_external_functions(external_functions_float)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Could not create complex evaluator: {e}",
+                        ))
+                    })?,
+            ));
+        }
+
+        let eval = &mut self.eval_arb_prec.as_mut().unwrap().1;
+
+        let inputs = inputs.into_iter().map(|x| x.0).collect::<Vec<_>>();
+        let mut out = vec![Float::with_val(prec, 0); self.eval_rat.get_output_len()];
+        eval.evaluate(&inputs, &mut out);
+        Ok(out.into_iter().map(|x| x.into()).collect())
+    }
+
+    /// Evaluate the expression for multiple inputs and return the result.
+    /// For best performance, use `numpy` arrays and `np.complex128` instead of lists and
+    /// `complex`.
+    ///
+    /// Examples
+    /// --------
+    /// Evaluate the function for three sets of inputs:
+    ///
+    /// >>> from symbolica import *
+    /// >>> import numpy as np
+    /// >>> ev = E('x * y + 2').evaluator({}, {}, [S('x'), S('y')])
+    /// >>> print(ev.evaluate(np.array([1.+2j, 2., 3., 4., 5., 6.]).reshape((3, 2))))
+    ///
+    /// Yields`[[ 4.+4.j] [14.+0.j] [32.+0.j]]`
     #[gen_stub(override_return_type(
         type_repr = "numpy.typing.NDArray[numpy.complex128]",
         imports = ("numpy.typing", "numpy")
@@ -16424,6 +16538,92 @@ impl PythonExpressionEvaluator {
         }
 
         Ok(out.into_pyarray(py))
+    }
+
+    /// Evaluate the expression for a single complex input, represented as a tuple of real and imaginary parts, with the given decimal digit precision and return the result.
+    ///
+    /// Examples
+    /// --------
+    /// Evaluate the function for a single input with 50 digits of precision:
+    ///
+    /// >>> from symbolica import *
+    /// >>> ev = E('x^2').evaluator({}, {}, [S('x')])
+    /// >>> print(ev.evaluate_complex_with_prec(
+    /// >>>     [(Decimal('1.234567890121223456789981273238947212312338947923'), Decimal('3.434567890121223356789981273238947212312338947923'))], 50))
+    ///
+    /// Yields `[(Decimal('-10.27209871653338252296233957800668637617803672307'), Decimal('8.480414467170121512062583245527383392798704790330'))]`
+    #[gen_stub(override_return_type(type_repr = "list[tuple[decimal.Decimal, decimal.Decimal]]", imports = ("decimal")))]
+    fn evaluate_complex_with_prec<'py>(
+        &mut self,
+        inputs: Vec<(PythonMultiPrecisionFloat, PythonMultiPrecisionFloat)>,
+        decimal_digit_precision: u32,
+    ) -> PyResult<Vec<(PythonMultiPrecisionFloat, PythonMultiPrecisionFloat)>> {
+        let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
+
+        if self.eval_arb_prec_complex.is_none()
+            || self.eval_arb_prec_complex.as_ref().unwrap().0 != prec
+        {
+            // build a new arb prec evaluator with the desired precision
+            let external_functions_float = self
+                .external_functions
+                .clone()
+                .into_iter()
+                .map(move |((_, name), f)| {
+                    let ff: Box<dyn ExternalFunction<Complex<Float>>> = Box::new(move |args| {
+                        let args_wrap: Vec<(PythonMultiPrecisionFloat, PythonMultiPrecisionFloat)> =
+                            args.iter()
+                                .map(|x| (x.re.clone().into(), x.im.clone().into()))
+                                .collect();
+                        Python::attach(|py| {
+                            let (re, im) = f
+                                .call1(py, (args_wrap,))
+                                .unwrap()
+                                .extract::<(PythonMultiPrecisionFloat, PythonMultiPrecisionFloat)>(
+                                    py,
+                                )
+                                .unwrap();
+                            Complex::new(re.0, im.0)
+                        })
+                    });
+
+                    (name.clone(), ff)
+                })
+                .collect();
+
+            self.eval_arb_prec_complex = Some((
+                prec,
+                self.eval_rat
+                    .clone()
+                    .map_coeff(&|x| {
+                        Complex::new(
+                            x.re.to_multi_prec_float(prec),
+                            x.im.to_multi_prec_float(prec),
+                        )
+                    })
+                    .with_external_functions(external_functions_float)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Could not create complex evaluator: {e}",
+                        ))
+                    })?,
+            ));
+        }
+
+        let eval = &mut self.eval_arb_prec_complex.as_mut().unwrap().1;
+
+        let inputs = inputs
+            .into_iter()
+            .map(|x| Complex::new(x.0.0, x.1.0))
+            .collect::<Vec<_>>();
+        let mut out = vec![
+            Complex::new(Float::with_val(prec, 0), Float::with_val(prec, 0));
+            self.eval_rat.get_output_len()
+        ];
+        eval.evaluate(&inputs, &mut out);
+        Ok(out
+            .into_iter()
+            .map(|x| (x.re.into(), x.im.into()))
+            .collect())
     }
 
     /// Dualize the evaluator to support hyper-dual numbers with the given shape,
@@ -16553,6 +16753,9 @@ impl PythonExpressionEvaluator {
                     "Could not create complex evaluator: {e}",
                 ))
             })?;
+
+        self.eval_arb_prec = None;
+        self.eval_arb_prec_complex = None;
 
         Ok(())
     }

@@ -5392,6 +5392,20 @@ class Evaluator:
         Yields`[[ 4.] [ 8.] [14.]]` 
         """
 
+    def evaluate_with_prec(self, inputs: Sequence[float | str | Decimal], decimal_digit_precision: int) -> list[Decimal]:
+        """Evaluate the expression for a single input with the given decimal digit precision and return the result.
+
+        Examples
+        --------
+        Evaluate the function for a single input with 50 digits of precision:
+
+        >>> from symbolica import *
+        >>> ev = E('x^2').evaluator({}, {}, [S('x')])
+        >>> print(ev.evaluate_with_prec([Decimal('1.234567890121223456789981273238947212312338947923')], 50))
+
+        Yields `1.524157875318369274550121833760353508310334033629`
+        """
+
     def evaluate_complex(self, inputs: npt.ArrayLike) -> npt.NDArray[np.complex128]:
         """Evaluate the expression for multiple inputs and return the result.
         For best performance, use `numpy` arrays and `np.complex128` instead of lists and
@@ -5407,6 +5421,21 @@ class Evaluator:
         >>> print(ev.evaluate(np.array([1.+2j, 2., 3., 4., 5., 6.]).reshape((3, 2))))
 
         Yields`[[ 4.+4.j] [14.+0.j] [32.+0.j]]` 
+        """
+
+    def evaluate_complex_with_prec(self, inputs: Sequence[tuple[float | str | Decimal, float | str | Decimal]], decimal_digit_precision: int) -> list[tuple[Decimal]]:
+        """Evaluate the expression for a single complex input, represented as a tuple of real and imaginary parts, with the given decimal digit precision and return the result.
+
+        Examples
+        --------
+        Evaluate the function for a single input with 50 digits of precision:
+
+        >>> from symbolica import *
+        >>> ev = E('x^2').evaluator({}, {}, [S('x')])
+        >>> print(ev.evaluate_complex_with_prec(
+        >>>     [(Decimal('1.234567890121223456789981273238947212312338947923'), Decimal('3.434567890121223356789981273238947212312338947923'))], 50))
+
+        Yields `[(Decimal('-10.27209871653338252296233957800668637617803672307'), Decimal('8.480414467170121512062583245527383392798704790330'))]`
         """
 
 
