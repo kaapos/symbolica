@@ -824,7 +824,7 @@ pub trait AtomCore: private::Sealed {
         params: &[Atom],
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
-        let mut tree = self.to_evaluation_tree(fn_map, params)?;
+        let tree = self.to_evaluation_tree(fn_map, params)?;
         Ok(tree.optimize(&optimization_settings))
     }
 
@@ -861,7 +861,7 @@ pub trait AtomCore: private::Sealed {
         params: &[Atom],
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
-        let mut tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
+        let tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
         Ok(tree.optimize(&optimization_settings))
     }
 
@@ -1583,14 +1583,14 @@ pub trait AtomCore: private::Sealed {
             .finish()
     }
 
-    /// Take the sine the atom.
+    /// Take the sine of the atom.
     fn sin(&self) -> Atom {
         FunctionBuilder::new(Symbol::SIN)
             .add_arg(self.as_atom_view())
             .finish()
     }
 
-    /// Take the cosine the atom.
+    /// Take the cosine of the atom.
     fn cos(&self) -> Atom {
         FunctionBuilder::new(Symbol::COS)
             .add_arg(self.as_atom_view())

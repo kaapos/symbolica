@@ -453,231 +453,114 @@ impl BuiltinSymbol {
     }
 }
 
+/// A hash of an expression, used for common subexpression elimination.
+pub type ExpressionHash = u64;
+
 /// A tree representation of an expression.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression<T> {
-    Const(T),
-    Parameter(usize),
-    Eval(usize, Vec<Expression<T>>),
-    Add(Vec<Expression<T>>),
-    Mul(Vec<Expression<T>>),
-    Pow(Box<(Expression<T>, i64)>),
-    Powf(Box<(Expression<T>, Expression<T>)>),
-    ReadArg(usize), // read nth function argument
-    BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
-    ExternalFun(usize, Vec<Expression<T>>),
-    IfElse(Box<(Expression<T>, Expression<T>, Expression<T>)>),
-    SubExpression(usize),
-}
-
-impl<T: InternalOrdering + Eq> PartialOrd for Expression<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: InternalOrdering + Eq> Ord for Expression<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (self, other) {
-            (Expression::Const(a), Expression::Const(b)) => a.internal_cmp(b),
-            (Expression::Parameter(a), Expression::Parameter(b)) => a.cmp(b),
-            (Expression::Eval(a, arg1), Expression::Eval(b, arg2)) => {
-                a.cmp(b).then_with(|| arg1.cmp(arg2))
-            }
-            (Expression::Add(a), Expression::Add(b)) => a.cmp(b),
-            (Expression::Mul(a), Expression::Mul(b)) => a.cmp(b),
-            (Expression::Pow(a), Expression::Pow(b)) => a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)),
-            (Expression::Powf(a), Expression::Powf(b)) => a.cmp(b),
-            (Expression::ReadArg(a), Expression::ReadArg(b)) => a.cmp(b),
-            (Expression::BuiltinFun(a, arg1), Expression::BuiltinFun(b, arg2)) => {
-                a.cmp(b).then_with(|| arg1.cmp(arg2))
-            }
-            (Expression::ExternalFun(a, arg1), Expression::ExternalFun(b, arg2)) => {
-                a.cmp(b).then_with(|| arg1.cmp(arg2))
-            }
-            (Expression::IfElse(a), Expression::IfElse(b)) => a.cmp(b),
-            (Expression::SubExpression(a), Expression::SubExpression(b)) => a.cmp(b),
-            (Expression::Const(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Const(_)) => std::cmp::Ordering::Greater,
-            (Expression::Parameter(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Parameter(_)) => std::cmp::Ordering::Greater,
-            (Expression::Eval(_, _), _) => std::cmp::Ordering::Less,
-            (_, Expression::Eval(_, _)) => std::cmp::Ordering::Greater,
-            (Expression::Add(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Add(_)) => std::cmp::Ordering::Greater,
-            (Expression::Mul(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Mul(_)) => std::cmp::Ordering::Greater,
-            (Expression::Pow(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Pow(_)) => std::cmp::Ordering::Greater,
-            (Expression::Powf(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::Powf(_)) => std::cmp::Ordering::Greater,
-            (Expression::ReadArg(_), _) => std::cmp::Ordering::Less,
-            (_, Expression::ReadArg(_)) => std::cmp::Ordering::Greater,
-            (Expression::BuiltinFun(_, _), _) => std::cmp::Ordering::Less,
-            (_, Expression::BuiltinFun(_, _)) => std::cmp::Ordering::Greater,
-            (Expression::ExternalFun(_, _), _) => std::cmp::Ordering::Less,
-            (_, Expression::ExternalFun(_, _)) => std::cmp::Ordering::Greater,
-            (Expression::IfElse(_), _) => std::cmp::Ordering::Greater,
-            (_, Expression::IfElse(_)) => std::cmp::Ordering::Less, // sort last so that parent common subexpressions can be used inside both branches
-        }
-    }
-}
-
-type ExpressionHash = u64;
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum HashedExpression<T> {
-    Const(ExpressionHash, T),
+    Const(ExpressionHash, Box<T>),
     Parameter(ExpressionHash, usize),
-    Eval(ExpressionHash, usize, Vec<HashedExpression<T>>),
-    Add(ExpressionHash, Vec<HashedExpression<T>>),
-    Mul(ExpressionHash, Vec<HashedExpression<T>>),
-    Pow(ExpressionHash, Box<(HashedExpression<T>, i64)>),
-    Powf(
-        ExpressionHash,
-        Box<(HashedExpression<T>, HashedExpression<T>)>,
-    ),
+    Eval(ExpressionHash, u32, Vec<Expression<T>>),
+    Add(ExpressionHash, Vec<Expression<T>>),
+    Mul(ExpressionHash, Vec<Expression<T>>),
+    Pow(ExpressionHash, Box<(Expression<T>, i64)>),
+    Powf(ExpressionHash, Box<(Expression<T>, Expression<T>)>),
     ReadArg(ExpressionHash, usize), // read nth function argument
-    BuiltinFun(ExpressionHash, BuiltinSymbol, Box<HashedExpression<T>>),
-    ExternalFun(ExpressionHash, usize, Vec<HashedExpression<T>>),
+    BuiltinFun(ExpressionHash, BuiltinSymbol, Box<Expression<T>>),
+    ExternalFun(ExpressionHash, u32, Vec<Expression<T>>),
     IfElse(
         ExpressionHash,
-        Box<(
-            HashedExpression<T>,
-            HashedExpression<T>,
-            HashedExpression<T>,
-        )>,
+        Box<(Expression<T>, Expression<T>, Expression<T>)>,
     ),
     SubExpression(ExpressionHash, usize),
 }
 
-impl<T> HashedExpression<T> {
+impl<T> Expression<T> {
     fn get_hash(&self) -> ExpressionHash {
         match self {
-            HashedExpression::Const(h, _) => *h,
-            HashedExpression::Parameter(h, _) => *h,
-            HashedExpression::Eval(h, _, _) => *h,
-            HashedExpression::Add(h, _) => *h,
-            HashedExpression::Mul(h, _) => *h,
-            HashedExpression::Pow(h, _) => *h,
-            HashedExpression::Powf(h, _) => *h,
-            HashedExpression::ReadArg(h, _) => *h,
-            HashedExpression::BuiltinFun(h, _, _) => *h,
-            HashedExpression::SubExpression(h, _) => *h,
-            HashedExpression::ExternalFun(h, _, _) => *h,
-            HashedExpression::IfElse(h, _) => *h,
+            Expression::Const(h, _) => *h,
+            Expression::Parameter(h, _) => *h,
+            Expression::Eval(h, _, _) => *h,
+            Expression::Add(h, _) => *h,
+            Expression::Mul(h, _) => *h,
+            Expression::Pow(h, _) => *h,
+            Expression::Powf(h, _) => *h,
+            Expression::ReadArg(h, _) => *h,
+            Expression::BuiltinFun(h, _, _) => *h,
+            Expression::SubExpression(h, _) => *h,
+            Expression::ExternalFun(h, _, _) => *h,
+            Expression::IfElse(h, _) => *h,
         }
     }
 }
 
-impl<T: Clone> HashedExpression<T> {
-    fn to_expression(&self) -> Expression<T> {
-        match self {
-            HashedExpression::Const(_, c) => Expression::Const(c.clone()),
-            HashedExpression::Parameter(_, p) => Expression::Parameter(*p),
-            HashedExpression::Eval(_, i, v) => {
-                Expression::Eval(*i, v.iter().map(|x| x.to_expression()).collect())
-            }
-            HashedExpression::Add(_, a) => {
-                Expression::Add(a.iter().map(|x| x.to_expression()).collect())
-            }
-            HashedExpression::Mul(_, a) => {
-                Expression::Mul(a.iter().map(|x| x.to_expression()).collect())
-            }
-            HashedExpression::Pow(_, p) => Expression::Pow(Box::new((p.0.to_expression(), p.1))),
-            HashedExpression::Powf(_, p) => {
-                Expression::Powf(Box::new((p.0.to_expression(), p.1.to_expression())))
-            }
-            HashedExpression::ReadArg(_, r) => Expression::ReadArg(*r),
-            HashedExpression::BuiltinFun(_, s, a) => {
-                Expression::BuiltinFun(*s, Box::new(a.to_expression()))
-            }
-            HashedExpression::SubExpression(_, s) => Expression::SubExpression(*s),
-            HashedExpression::ExternalFun(_, s, a) => {
-                Expression::ExternalFun(*s, a.iter().map(|x| x.to_expression()).collect())
-            }
-            HashedExpression::IfElse(_, b) => Expression::IfElse(Box::new((
-                b.0.to_expression(),
-                b.1.to_expression(),
-                b.2.to_expression(),
-            ))),
-        }
-    }
-}
-
-impl<T: Eq + InternalOrdering> PartialOrd for HashedExpression<T> {
+impl<T: Eq + InternalOrdering> PartialOrd for Expression<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
+impl<T: Eq + InternalOrdering> Ord for Expression<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (HashedExpression::Const(_, a), HashedExpression::Const(_, b)) => a.internal_cmp(b),
-            (HashedExpression::Parameter(_, a), HashedExpression::Parameter(_, b)) => a.cmp(b),
-            (HashedExpression::Eval(_, a, b), HashedExpression::Eval(_, c, d)) => {
+            (Expression::Const(_, a), Expression::Const(_, b)) => a.internal_cmp(b),
+            (Expression::Parameter(_, a), Expression::Parameter(_, b)) => a.cmp(b),
+            (Expression::Eval(_, a, b), Expression::Eval(_, c, d)) => {
                 a.cmp(c).then_with(|| b.cmp(d))
             }
-            (HashedExpression::Add(_, a), HashedExpression::Add(_, b)) => a.cmp(b),
-            (HashedExpression::Mul(_, a), HashedExpression::Mul(_, b)) => a.cmp(b),
-            (HashedExpression::Pow(_, p1), HashedExpression::Pow(_, p2)) => p1.cmp(p2),
-            (HashedExpression::Powf(_, p1), HashedExpression::Powf(_, p2)) => p1.cmp(p2),
-            (HashedExpression::ReadArg(_, r1), HashedExpression::ReadArg(_, r2)) => r1.cmp(r2),
-            (HashedExpression::BuiltinFun(_, a, b), HashedExpression::BuiltinFun(_, c, d)) => {
+            (Expression::Add(_, a), Expression::Add(_, b)) => a.cmp(b),
+            (Expression::Mul(_, a), Expression::Mul(_, b)) => a.cmp(b),
+            (Expression::Pow(_, p1), Expression::Pow(_, p2)) => p1.cmp(p2),
+            (Expression::Powf(_, p1), Expression::Powf(_, p2)) => p1.cmp(p2),
+            (Expression::ReadArg(_, r1), Expression::ReadArg(_, r2)) => r1.cmp(r2),
+            (Expression::BuiltinFun(_, a, b), Expression::BuiltinFun(_, c, d)) => {
                 a.cmp(c).then_with(|| b.cmp(d))
             }
-            (HashedExpression::SubExpression(_, s1), HashedExpression::SubExpression(_, s2)) => {
-                s1.cmp(s2)
-            }
-            (HashedExpression::ExternalFun(_, a, b), HashedExpression::ExternalFun(_, c, d)) => {
+            (Expression::SubExpression(_, s1), Expression::SubExpression(_, s2)) => s1.cmp(s2),
+            (Expression::ExternalFun(_, a, b), Expression::ExternalFun(_, c, d)) => {
                 a.cmp(c).then_with(|| b.cmp(d))
             }
-            (HashedExpression::IfElse(_, a), HashedExpression::IfElse(_, b)) => a.cmp(b),
-            (HashedExpression::Const(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Const(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Parameter(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Parameter(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Eval(_, _, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Eval(_, _, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Add(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Add(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Mul(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Mul(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Pow(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Pow(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::Powf(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::Powf(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::ReadArg(_, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::ReadArg(_, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::BuiltinFun(_, _, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::ExternalFun(_, _, _), _) => std::cmp::Ordering::Less,
-            (_, HashedExpression::ExternalFun(_, _, _)) => std::cmp::Ordering::Greater,
-            (HashedExpression::IfElse(_, _), _) => std::cmp::Ordering::Greater,
-            (_, HashedExpression::IfElse(_, _)) => std::cmp::Ordering::Less,
+            (Expression::IfElse(_, a), Expression::IfElse(_, b)) => a.cmp(b),
+            (Expression::Const(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Const(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::Parameter(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Parameter(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::Eval(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Eval(_, _, _)) => std::cmp::Ordering::Greater,
+            (Expression::Add(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Add(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::Mul(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Mul(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::Pow(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Pow(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::Powf(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Powf(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::ReadArg(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::ReadArg(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::BuiltinFun(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
+            (Expression::ExternalFun(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::ExternalFun(_, _, _)) => std::cmp::Ordering::Greater,
+            (Expression::IfElse(_, _), _) => std::cmp::Ordering::Greater,
+            (_, Expression::IfElse(_, _)) => std::cmp::Ordering::Less, // sort last so that parent common subexpressions can be used inside both branches
         }
     }
 }
 
-impl<T: Eq + Hash> Hash for HashedExpression<T> {
+impl<T: Eq + Hash> Hash for Expression<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.get_hash())
     }
 }
 
-impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
-    fn find_subexpression<'a>(
-        &'a self,
-        subexp: &mut HashMap<&'a HashedExpression<T>, usize>,
-    ) -> bool {
+impl<T: Eq + Hash + Clone + InternalOrdering> Expression<T> {
+    fn find_subexpression<'a>(&'a self, subexp: &mut HashMap<&'a Expression<T>, usize>) -> bool {
         if matches!(
             self,
-            HashedExpression::Const(_, _)
-                | HashedExpression::Parameter(_, _)
-                | HashedExpression::ReadArg(_, _)
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _)
         ) {
             return true;
         }
@@ -690,33 +573,29 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         subexp.insert(self, 1);
 
         match self {
-            HashedExpression::Const(_, _)
-            | HashedExpression::Parameter(_, _)
-            | HashedExpression::ReadArg(_, _) => {}
-            HashedExpression::Eval(_, _, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in ae {
                     arg.find_subexpression(subexp);
                 }
             }
-            HashedExpression::Add(_, a)
-            | HashedExpression::Mul(_, a)
-            | HashedExpression::ExternalFun(_, _, a) => {
+            Expression::Add(_, a) | Expression::Mul(_, a) | Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.find_subexpression(subexp);
                 }
             }
-            HashedExpression::Pow(_, p) => {
+            Expression::Pow(_, p) => {
                 p.0.find_subexpression(subexp);
             }
-            HashedExpression::Powf(_, p) => {
+            Expression::Powf(_, p) => {
                 p.0.find_subexpression(subexp);
                 p.1.find_subexpression(subexp);
             }
-            HashedExpression::BuiltinFun(_, _, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.find_subexpression(subexp);
             }
-            HashedExpression::SubExpression(_, _) => {}
-            HashedExpression::IfElse(_, b) => {
+            Expression::SubExpression(_, _) => {}
+            Expression::IfElse(_, b) => {
                 b.0.find_subexpression(subexp);
                 b.1.find_subexpression(subexp);
                 b.2.find_subexpression(subexp);
@@ -726,44 +605,36 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         false
     }
 
-    fn replace_subexpression(
-        &mut self,
-        subexp: &HashMap<&HashedExpression<T>, usize>,
-        skip_root: bool,
-    ) {
+    fn replace_subexpression(&mut self, subexp: &HashMap<&Expression<T>, usize>, skip_root: bool) {
         if !skip_root && let Some(i) = subexp.get(self) {
-            *self = HashedExpression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
+            *self = Expression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
             return;
         }
 
         match self {
-            HashedExpression::Const(_, _)
-            | HashedExpression::Parameter(_, _)
-            | HashedExpression::ReadArg(_, _) => {}
-            HashedExpression::Eval(_, _, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in &mut *ae {
                     arg.replace_subexpression(subexp, false);
                 }
             }
-            HashedExpression::Add(_, a)
-            | HashedExpression::Mul(_, a)
-            | HashedExpression::ExternalFun(_, _, a) => {
+            Expression::Add(_, a) | Expression::Mul(_, a) | Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.replace_subexpression(subexp, false);
                 }
             }
-            HashedExpression::Pow(_, p) => {
+            Expression::Pow(_, p) => {
                 p.0.replace_subexpression(subexp, false);
             }
-            HashedExpression::Powf(_, p) => {
+            Expression::Powf(_, p) => {
                 p.0.replace_subexpression(subexp, false);
                 p.1.replace_subexpression(subexp, false);
             }
-            HashedExpression::BuiltinFun(_, _, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.replace_subexpression(subexp, false);
             }
-            HashedExpression::SubExpression(_, _) => {}
-            HashedExpression::IfElse(_, b) => {
+            Expression::SubExpression(_, _) => {}
+            Expression::IfElse(_, b) => {
                 b.0.replace_subexpression(subexp, false);
                 b.1.replace_subexpression(subexp, false);
                 b.2.replace_subexpression(subexp, false);
@@ -779,9 +650,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
     ) -> (usize, usize) {
         if matches!(
             self,
-            HashedExpression::Const(_, _)
-                | HashedExpression::Parameter(_, _)
-                | HashedExpression::ReadArg(_, _)
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _)
         ) {
             return (0, 0);
         }
@@ -793,9 +662,9 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         sub_expr.insert(self, 1);
 
         match self {
-            HashedExpression::Const(_, _) => (0, 0),
-            HashedExpression::Parameter(_, _) => (0, 0),
-            HashedExpression::Eval(_, _, args) => {
+            Expression::Const(_, _) => (0, 0),
+            Expression::Parameter(_, _) => (0, 0),
+            Expression::Eval(_, _, args) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in args {
@@ -805,7 +674,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 }
                 (add, mul)
             }
-            HashedExpression::Add(_, a) => {
+            Expression::Add(_, a) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in a {
@@ -815,7 +684,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 }
                 (add + a.len() - 1, mul)
             }
-            HashedExpression::Mul(_, m) => {
+            Expression::Mul(_, m) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in m {
@@ -825,21 +694,19 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 }
                 (add, mul + m.len() - 1)
             }
-            HashedExpression::Pow(_, p) => {
+            Expression::Pow(_, p) => {
                 let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
                 (a, m + p.1.unsigned_abs() as usize - 1)
             }
-            HashedExpression::Powf(_, p) => {
+            Expression::Powf(_, p) => {
                 let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
                 let (a2, m2) = p.1.count_operations_with_subexpression(sub_expr);
                 (a + a2, m + m2 + 1) // not clear how to count this
             }
-            HashedExpression::ReadArg(_, _) => (0, 0),
-            HashedExpression::BuiltinFun(_, _, b) => {
-                b.count_operations_with_subexpression(sub_expr)
-            } // not clear how to count this, third arg?
-            HashedExpression::SubExpression(_, _) => (0, 0),
-            HashedExpression::ExternalFun(_, _, a) => {
+            Expression::ReadArg(_, _) => (0, 0),
+            Expression::BuiltinFun(_, _, b) => b.count_operations_with_subexpression(sub_expr), // not clear how to count this, third arg?
+            Expression::SubExpression(_, _) => (0, 0),
+            Expression::ExternalFun(_, _, a) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in a {
@@ -849,7 +716,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 }
                 (add + a.len() - 1, mul)
             }
-            HashedExpression::IfElse(_, b) => {
+            Expression::IfElse(_, b) => {
                 let (a1, m1) = b.0.count_operations_with_subexpression(sub_expr);
                 let (a2, m2) = b.1.count_operations_with_subexpression(sub_expr);
                 let (a3, m3) = b.2.count_operations_with_subexpression(sub_expr);
@@ -860,133 +727,171 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
 }
 
 impl<T: std::hash::Hash + Clone> Expression<T> {
-    fn to_hashed_expression(&self) -> (ExpressionHash, HashedExpression<T>) {
+    fn rehashed(mut self, partial: bool) -> Self {
+        self.rehash(partial);
+        self
+    }
+
+    fn rehash(&mut self, partial: bool) -> ExpressionHash {
         match self {
-            Expression::Const(c) => {
+            Expression::Const(h, c) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(0);
                 c.hash(&mut hasher);
-                let h = hasher.finish();
-                (h, HashedExpression::Const(h, c.clone()))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Parameter(p) => {
+            Expression::Parameter(h, p) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(1);
                 hasher.write_usize(*p);
-                let h = hasher.finish();
-                (h, HashedExpression::Parameter(h, *p))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Eval(i, v) => {
+            Expression::Eval(h, i, v) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(2);
-                hasher.write_usize(*i);
-                let mut new_v = vec![];
+                hasher.write_u32(*i);
                 for x in v {
-                    let (h, v) = x.to_hashed_expression();
-                    new_v.push(v);
-                    hasher.write_u64(h);
+                    hasher.write_u64(x.rehash(partial));
                 }
-                let h = hasher.finish();
-                (h, HashedExpression::Eval(h, *i, new_v))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Add(v) => {
+            Expression::Add(h, v) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(3);
-                let mut new_v = vec![];
 
                 // do an additive hash
                 let mut arg_sum = 0u64;
                 for x in v {
-                    let (h, v) = x.to_hashed_expression();
-                    new_v.push(v);
-                    arg_sum = arg_sum.wrapping_add(h);
+                    arg_sum = arg_sum.wrapping_add(x.rehash(partial));
                 }
                 hasher.write_u64(arg_sum);
-                let h = hasher.finish();
-                (h, HashedExpression::Add(h, new_v))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Mul(v) => {
+            Expression::Mul(h, v) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(4);
-                let mut new_v = vec![];
 
                 // do an additive hash
                 let mut arg_sum = 0u64;
                 for x in v {
-                    let (h, v) = x.to_hashed_expression();
-                    new_v.push(v);
-                    arg_sum = arg_sum.wrapping_add(h);
+                    arg_sum = arg_sum.wrapping_add(x.rehash(partial));
                 }
                 hasher.write_u64(arg_sum);
-                let h = hasher.finish();
-                (h, HashedExpression::Mul(h, new_v))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Pow(p) => {
+            Expression::Pow(h, p) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(5);
-                let (hb, vb) = p.0.to_hashed_expression();
+                let hb = p.0.rehash(partial);
                 hasher.write_u64(hb);
                 hasher.write_i64(p.1);
-                let h = hasher.finish();
-                (h, HashedExpression::Pow(h, Box::new((vb, p.1))))
+                *h = hasher.finish();
+                *h
             }
-            Expression::Powf(p) => {
+            Expression::Powf(h, p) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(6);
-                let (hb, vb) = p.0.to_hashed_expression();
-                let (he, ve) = p.1.to_hashed_expression();
+                let hb = p.0.rehash(partial);
+                let he = p.1.rehash(partial);
                 hasher.write_u64(hb);
                 hasher.write_u64(he);
-                let h = hasher.finish();
-                (h, HashedExpression::Powf(h, Box::new((vb, ve))))
+                *h = hasher.finish();
+                *h
             }
-            Expression::ReadArg(i) => {
+            Expression::ReadArg(h, i) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(7);
                 hasher.write_usize(*i);
-                let h = hasher.finish();
-                (h, HashedExpression::ReadArg(h, *i))
+                *h = hasher.finish();
+                *h
             }
-            Expression::BuiltinFun(s, a) => {
+            Expression::BuiltinFun(h, s, a) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(8);
                 s.hash(&mut hasher);
-                let (ha, va) = a.to_hashed_expression();
+                let ha = a.rehash(partial);
                 hasher.write_u64(ha);
-                let h = hasher.finish();
-                (h, HashedExpression::BuiltinFun(h, *s, Box::new(va)))
+                *h = hasher.finish();
+                *h
             }
-            Expression::SubExpression(i) => {
+            Expression::SubExpression(h, i) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(9);
                 hasher.write_usize(*i);
-                let h = hasher.finish();
-                (h, HashedExpression::SubExpression(h, *i))
+                *h = hasher.finish();
+                *h
             }
-            Expression::ExternalFun(s, a) => {
+            Expression::ExternalFun(h, s, a) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(10);
                 s.hash(&mut hasher);
-                let mut args = vec![];
                 for x in a {
-                    let (h, v) = x.to_hashed_expression();
-                    hasher.write_u64(h);
-                    args.push(v);
+                    hasher.write_u64(x.rehash(partial));
                 }
-                let h = hasher.finish();
-                (h, HashedExpression::ExternalFun(h, *s, args))
+                *h = hasher.finish();
+                *h
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(h, b) => {
+                if partial && *h != 0 {
+                    return *h;
+                }
+
                 let mut hasher = AHasher::default();
                 hasher.write_u8(11);
-                let (h1, v1) = b.0.to_hashed_expression();
-                let (h2, v2) = b.1.to_hashed_expression();
-                let (h3, v3) = b.2.to_hashed_expression();
-                hasher.write_u64(h1);
-                hasher.write_u64(h2);
-                hasher.write_u64(h3);
-                let h = hasher.finish();
-                (h, HashedExpression::IfElse(h, Box::new((v1, v2, v3))))
+                hasher.write_u64(b.0.rehash(partial));
+                hasher.write_u64(b.1.rehash(partial));
+                hasher.write_u64(b.2.rehash(partial));
+                *h = hasher.finish();
+                *h
             }
         }
     }
@@ -6180,86 +6085,94 @@ impl<T: Clone + PartialEq> SplitExpression<T> {
 }
 
 impl<T: Clone + PartialEq> Expression<T> {
+    /// Map the coefficients.
+    ///
+    /// Note that no rehashing is performed.
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> Expression<T2> {
         match self {
-            Expression::Const(c) => Expression::Const(f(c)),
-            Expression::Parameter(p) => Expression::Parameter(*p),
-            Expression::Eval(id, e_args) => {
-                Expression::Eval(*id, e_args.iter().map(|x| x.map_coeff(f)).collect())
+            Expression::Const(h, c) => Expression::Const(*h, Box::new(f(c))),
+            Expression::Parameter(h, p) => Expression::Parameter(*h, *p),
+            Expression::Eval(h, id, e_args) => {
+                Expression::Eval(*h, *id, e_args.iter().map(|x| x.map_coeff(f)).collect())
             }
-            Expression::Add(a) => {
+            Expression::Add(h, a) => {
                 let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
-                Expression::Add(new_args)
+                Expression::Add(*h, new_args)
             }
-            Expression::Mul(m) => {
+            Expression::Mul(h, m) => {
                 let new_args = m.iter().map(|x| x.map_coeff(f)).collect();
-                Expression::Mul(new_args)
+                Expression::Mul(*h, new_args)
             }
-            Expression::Pow(p) => {
+            Expression::Pow(h, p) => {
                 let (b, e) = &**p;
-                Expression::Pow(Box::new((b.map_coeff(f), *e)))
+                Expression::Pow(*h, Box::new((b.map_coeff(f), *e)))
             }
-            Expression::Powf(p) => {
+            Expression::Powf(h, p) => {
                 let (b, e) = &**p;
-                Expression::Powf(Box::new((b.map_coeff(f), e.map_coeff(f))))
+                Expression::Powf(*h, Box::new((b.map_coeff(f), e.map_coeff(f))))
             }
-            Expression::ReadArg(s) => Expression::ReadArg(*s),
-            Expression::BuiltinFun(s, a) => Expression::BuiltinFun(*s, Box::new(a.map_coeff(f))),
-            Expression::SubExpression(i) => Expression::SubExpression(*i),
-            Expression::ExternalFun(s, a) => {
+            Expression::ReadArg(h, s) => Expression::ReadArg(*h, *s),
+            Expression::BuiltinFun(h, s, a) => {
+                Expression::BuiltinFun(*h, *s, Box::new(a.map_coeff(f)))
+            }
+            Expression::SubExpression(h, i) => Expression::SubExpression(*h, *i),
+            Expression::ExternalFun(h, s, a) => {
                 let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
-                Expression::ExternalFun(*s, new_args)
+                Expression::ExternalFun(*h, *s, new_args)
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(h, b) => {
                 let (cond, then_expr, else_expr) = &**b;
-                Expression::IfElse(Box::new((
-                    cond.map_coeff(f),
-                    then_expr.map_coeff(f),
-                    else_expr.map_coeff(f),
-                )))
+                Expression::IfElse(
+                    *h,
+                    Box::new((
+                        cond.map_coeff(f),
+                        then_expr.map_coeff(f),
+                        else_expr.map_coeff(f),
+                    )),
+                )
             }
         }
     }
 
     fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
         match self {
-            Expression::Const(t) => {
-                if let Some(p) = stack.iter().skip(param_len).position(|x| x == t) {
-                    *self = Expression::Parameter(param_len + p);
+            Expression::Const(_, t) => {
+                if let Some(p) = stack.iter().skip(param_len).position(|x| x == &**t) {
+                    *self = Expression::Parameter(0, param_len + p);
                 } else {
-                    stack.push(t.clone());
-                    *self = Expression::Parameter(stack.len() - 1);
+                    stack.push(t.as_ref().clone());
+                    *self = Expression::Parameter(0, stack.len() - 1);
                 }
             }
-            Expression::Parameter(_) => {}
-            Expression::Eval(_, e_args) => {
+            Expression::Parameter(_, _) => {}
+            Expression::Eval(_, _, e_args) => {
                 for a in e_args {
                     a.strip_constants(stack, param_len);
                 }
             }
-            Expression::Add(a) | Expression::Mul(a) => {
+            Expression::Add(_, a) | Expression::Mul(_, a) => {
                 for arg in a {
                     arg.strip_constants(stack, param_len);
                 }
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 p.0.strip_constants(stack, param_len);
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 p.0.strip_constants(stack, param_len);
                 p.1.strip_constants(stack, param_len);
             }
-            Expression::ReadArg(_) => {}
-            Expression::BuiltinFun(_, a) => {
+            Expression::ReadArg(_, _) => {}
+            Expression::BuiltinFun(_, _, a) => {
                 a.strip_constants(stack, param_len);
             }
-            Expression::SubExpression(_) => {}
-            Expression::ExternalFun(_, a) => {
+            Expression::SubExpression(_, _) => {}
+            Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.strip_constants(stack, param_len);
                 }
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 b.0.strip_constants(stack, param_len);
                 b.1.strip_constants(stack, param_len);
                 b.2.strip_constants(stack, param_len);
@@ -6299,13 +6212,13 @@ impl<T: Clone + PartialEq> EvalTree<T> {
 impl EvalTree<Complex<Rational>> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
     pub fn linearize(
-        mut self,
+        &mut self,
         settings: &OptimizationSettings,
     ) -> ExpressionEvaluator<Complex<Rational>> {
         let mut stack = vec![Complex::<Rational>::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
-        self.strip_constants(&mut stack);
+        self.strip_constants(&mut stack); // FIXME
         let reserved_indices = stack.len();
 
         let mut sub_expr_pos = HashMap::default();
@@ -6407,14 +6320,14 @@ impl EvalTree<Complex<Rational>> {
         reserved_indices: usize,
     ) -> usize {
         match tree {
-            Expression::Const(t) => {
+            Expression::Const(_, t) => {
                 unreachable!(
                     "Constants should have been stripped from the expression tree. Found constant {}",
                     t
                 );
             }
-            Expression::Parameter(i) => *i,
-            Expression::Eval(id, e_args) => {
+            Expression::Parameter(_, i) => *i,
+            Expression::Eval(_, id, e_args) => {
                 // inline the function
                 let new_args: Vec<_> = e_args
                     .iter()
@@ -6433,7 +6346,7 @@ impl EvalTree<Complex<Rational>> {
                     .collect();
 
                 let mut sub_expr_pos = HashMap::default();
-                let func = &self.functions[*id].2;
+                let func = &self.functions[*id as usize].2;
                 self.linearize_impl(
                     &func.tree[0],
                     &func.subexpressions,
@@ -6445,7 +6358,7 @@ impl EvalTree<Complex<Rational>> {
                     reserved_indices,
                 )
             }
-            Expression::Add(a) => {
+            Expression::Add(_, a) => {
                 let mut args: Vec<_> = a
                     .iter()
                     .map(|x| {
@@ -6471,7 +6384,7 @@ impl EvalTree<Complex<Rational>> {
 
                 res
             }
-            Expression::Mul(m) => {
+            Expression::Mul(_, m) => {
                 let mut args: Vec<_> = m
                     .iter()
                     .map(|x| {
@@ -6497,7 +6410,7 @@ impl EvalTree<Complex<Rational>> {
 
                 res
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 let b = self.linearize_impl(
                     &p.0,
                     subexpressions,
@@ -6523,7 +6436,7 @@ impl EvalTree<Complex<Rational>> {
                 }
                 res
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 let b = self.linearize_impl(
                     &p.0,
                     subexpressions,
@@ -6550,8 +6463,8 @@ impl EvalTree<Complex<Rational>> {
                 instr.push((Instr::Powf(res, b, e), ComplexPhase::Any));
                 res
             }
-            Expression::ReadArg(a) => args[*a],
-            Expression::BuiltinFun(s, v) => {
+            Expression::ReadArg(_, a) => args[*a],
+            Expression::BuiltinFun(_, s, v) => {
                 let arg = self.linearize_impl(
                     v,
                     subexpressions,
@@ -6567,7 +6480,7 @@ impl EvalTree<Complex<Rational>> {
                 instr.push((c, ComplexPhase::Any));
                 stack.len() - 1
             }
-            Expression::SubExpression(id) => {
+            Expression::SubExpression(_, id) => {
                 if sub_expr_pos.contains_key(id) {
                     *sub_expr_pos.get(id).unwrap()
                 } else {
@@ -6592,7 +6505,7 @@ impl EvalTree<Complex<Rational>> {
                     res
                 }
             }
-            Expression::ExternalFun(s, v) => {
+            Expression::ExternalFun(_, s, v) => {
                 let args: Vec<_> = v
                     .iter()
                     .map(|x| {
@@ -6612,12 +6525,12 @@ impl EvalTree<Complex<Rational>> {
                 stack.push(Complex::default());
                 let res = stack.len() - 1;
 
-                let f = Instr::ExternalFun(res, *s, args);
+                let f = Instr::ExternalFun(res, *s as usize, args);
                 instr.push((f, ComplexPhase::Any));
 
                 res
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 let instr_len = instr.len();
                 let stack_len = stack.len();
                 let subexpression_len = sub_expr_pos.len();
@@ -6775,12 +6688,23 @@ impl EvalTree<Complex<Rational>> {
     /// and additions, using `iterations` iterations of the optimization algorithm
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize(
-        &mut self,
+        mut self,
         settings: &OptimizationSettings,
     ) -> ExpressionEvaluator<Complex<Rational>> {
-        let _ = self.optimize_horner_scheme(settings);
+        if settings.verbose {
+            let (n_add, n_mul) = self.count_operations();
+            info!(
+                "Initial ops: {} additions and {} multiplications",
+                n_add, n_mul
+            );
+        }
+
+        if settings.horner_iterations > 0 {
+            let _ = self.optimize_horner_scheme(settings);
+        }
+
         self.common_subexpression_elimination();
-        self.clone().linearize(settings)
+        self.linearize(settings)
     }
 
     /// Write the expressions in a Horner scheme where the variables
@@ -6890,29 +6814,29 @@ impl Expression<Complex<Rational>> {
         }
 
         let a = match self {
-            Expression::Add(a) => a,
-            Expression::Eval(_, a) => {
+            Expression::Add(_, a) => a,
+            Expression::Eval(_, _, a) => {
                 for arg in a {
                     arg.apply_horner_scheme(scheme);
                 }
                 return;
             }
-            Expression::Mul(m) => {
+            Expression::Mul(_, m) => {
                 for a in m {
                     a.apply_horner_scheme(scheme);
                 }
                 return;
             }
-            Expression::Pow(b) => {
+            Expression::Pow(_, b) => {
                 b.0.apply_horner_scheme(scheme);
                 return;
             }
-            Expression::Powf(b) => {
+            Expression::Powf(_, b) => {
                 b.0.apply_horner_scheme(scheme);
                 b.1.apply_horner_scheme(scheme);
                 return;
             }
-            Expression::BuiltinFun(_, b) => {
+            Expression::BuiltinFun(_, _, b) => {
                 b.apply_horner_scheme(scheme);
                 return;
             }
@@ -6925,10 +6849,10 @@ impl Expression<Complex<Rational>> {
 
         let mut max_pow: Option<i64> = None;
         for x in &*a {
-            if let Expression::Mul(m) = x {
+            if let Expression::Mul(_, m) = x {
                 let mut pow_counter = 0;
                 for y in m {
-                    if let Expression::Pow(p) = y {
+                    if let Expression::Pow(_, p) = y {
                         if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                         }
@@ -6940,7 +6864,7 @@ impl Expression<Complex<Rational>> {
                 if pow_counter > 0 && (max_pow.is_none() || pow_counter < max_pow.unwrap()) {
                     max_pow = Some(pow_counter);
                 }
-            } else if let Expression::Pow(p) = x {
+            } else if let Expression::Pow(_, p) = x {
                 if p.0 == scheme[0] && p.1 > 0 && (max_pow.is_none() || p.1 < max_pow.unwrap()) {
                     max_pow = Some(p.1);
                 }
@@ -6962,16 +6886,16 @@ impl Expression<Complex<Rational>> {
         for x in &*a {
             let mut num = None;
 
-            if let Expression::Mul(m) = x {
+            if let Expression::Mul(_, m) = x {
                 for y in m {
-                    if let Expression::Const(c) = y
+                    if let Expression::Const(_, c) = y
                         && c.re.is_integer()
                         && c.im.is_integer()
                     {
                         num = Some(c);
                     }
                 }
-            } else if let Expression::Const(c) = x
+            } else if let Expression::Const(_, c) = x
                 && c.re.is_integer()
                 && c.im.is_integer()
             {
@@ -6994,16 +6918,16 @@ impl Expression<Complex<Rational>> {
         if !gcd.is_zero() && !gcd.is_one() {
             for x in &mut *a {
                 match x {
-                    Expression::Mul(m) => {
+                    Expression::Mul(_, m) => {
                         for y in m {
-                            if let Expression::Const(c) = y {
-                                *c /= &gcd;
+                            if let Expression::Const(_, c) = y {
+                                **c /= &gcd;
                                 break;
                             }
                         }
                     }
-                    Expression::Const(c) => {
-                        *c /= &gcd;
+                    Expression::Const(_, c) => {
+                        **c /= &gcd;
                     }
                     _ => {
                         unreachable!()
@@ -7017,11 +6941,11 @@ impl Expression<Complex<Rational>> {
 
         for mut x in a.drain(..) {
             let mut found = false;
-            if let Expression::Mul(m) = &mut x {
+            if let Expression::Mul(_, m) = &mut x {
                 let mut pow_counter = 0;
 
                 m.retain(|y| {
-                    if let Expression::Pow(p) = y {
+                    if let Expression::Pow(_, p) = y {
                         if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                             false
@@ -7038,10 +6962,13 @@ impl Expression<Complex<Rational>> {
 
                 if pow_counter > max_pow {
                     if pow_counter > max_pow + 1 {
-                        m.push(Expression::Pow(Box::new((
-                            scheme[0].clone(),
-                            pow_counter - max_pow,
-                        ))));
+                        m.push(
+                            Expression::Pow(
+                                0,
+                                Box::new((scheme[0].clone(), pow_counter - max_pow)),
+                            )
+                            .rehashed(true),
+                        );
                     } else {
                         m.push(scheme[0].clone());
                     }
@@ -7050,26 +6977,26 @@ impl Expression<Complex<Rational>> {
                 }
 
                 if m.is_empty() {
-                    x = Expression::Const(Complex::new_one());
+                    x = Expression::Const(0, Box::new(Complex::new_one())).rehashed(true);
                 } else if m.len() == 1 {
                     x = m.pop().unwrap();
                 }
 
                 found = pow_counter > 0;
-            } else if let Expression::Pow(p) = &mut x {
+            } else if let Expression::Pow(_, p) = &mut x {
                 if p.0 == scheme[0] && p.1 > 0 {
                     if p.1 > max_pow + 1 {
                         p.1 -= max_pow;
                     } else if p.1 - max_pow == 1 {
                         x = scheme[0].clone();
                     } else {
-                        x = Expression::Const(Complex::new_one());
+                        x = Expression::Const(0, Box::new(Complex::new_one())).rehashed(true);
                     }
                     found = true;
                 }
             } else if x == scheme[0] {
                 found = true;
-                x = Expression::Const(Complex::new_one());
+                x = Expression::Const(0, Box::new(Complex::new_one())).rehashed(true);
             }
 
             if found {
@@ -7082,51 +7009,60 @@ impl Expression<Complex<Rational>> {
         let extracted = if max_pow == 1 {
             scheme[0].clone()
         } else {
-            Expression::Pow(Box::new((scheme[0].clone(), max_pow)))
+            Expression::Pow(0, Box::new((scheme[0].clone(), max_pow))).rehashed(true)
         };
 
         let mut contains = if contains.len() == 1 {
             contains.pop().unwrap()
         } else {
-            Expression::Add(contains)
+            Expression::Add(0, contains).rehashed(true)
         };
 
         contains.apply_horner_scheme(scheme); // keep trying with same variable
 
         let mut v = vec![];
-        if let Expression::Mul(a) = contains {
+        if let Expression::Mul(_, a) = contains {
             v.extend(a);
         } else {
             v.push(contains);
         }
 
         v.push(extracted);
-        v.retain(|x| *x != Expression::Const(Rational::one().into()));
+        v.retain(|x| {
+            if let Expression::Const(_, y) = x
+                && y.is_one()
+            {
+                false
+            } else {
+                true
+            }
+        });
         v.sort();
 
         let mut c = if v.len() == 1 {
             v.pop().unwrap()
         } else {
-            Expression::Mul(v)
+            Expression::Mul(0, v).rehashed(true)
         };
 
         if rest.is_empty() {
             if !gcd.is_zero() && !gcd.is_one() {
-                if let Expression::Mul(v) = &mut c {
-                    v.push(Expression::Const(gcd));
+                if let Expression::Mul(_, v) = &mut c {
+                    v.push(Expression::Const(0, Box::new(gcd)));
                     v.sort();
-                    *self = c;
+                    *self = c.rehashed(true);
                 } else {
-                    *self = Expression::Mul(vec![Expression::Const(gcd), c]);
+                    *self = Expression::Mul(0, vec![Expression::Const(0, Box::new(gcd)), c])
+                        .rehashed(true);
                 }
             } else {
-                *self = c;
+                *self = c.rehashed(true);
             }
         } else {
             let mut r = if rest.len() == 1 {
                 rest.pop().unwrap()
             } else {
-                Expression::Add(rest)
+                Expression::Add(0, rest).rehashed(true)
             };
 
             r.apply_horner_scheme(&scheme[1..]);
@@ -7134,7 +7070,7 @@ impl Expression<Complex<Rational>> {
             a.clear();
             a.push(c);
 
-            if let Expression::Add(aa) = r {
+            if let Expression::Add(_, aa) = r {
                 a.extend(aa);
             } else {
                 a.push(r);
@@ -7143,10 +7079,14 @@ impl Expression<Complex<Rational>> {
             a.sort();
 
             if !gcd.is_zero() && !gcd.is_one() {
-                *self = Expression::Mul(vec![
-                    Expression::Const(gcd),
-                    Expression::Add(std::mem::take(a)),
-                ]);
+                *self = Expression::Mul(
+                    0,
+                    vec![
+                        Expression::Const(0, Box::new(gcd)),
+                        Expression::Add(0, std::mem::take(a)),
+                    ],
+                )
+                .rehashed(true);
             }
         }
     }
@@ -7154,13 +7094,13 @@ impl Expression<Complex<Rational>> {
     /// Apply a simple occurrence-order Horner scheme to every addition.
     pub fn occurrence_order_horner_scheme(&mut self) {
         match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in ae {
                     arg.occurrence_order_horner_scheme();
                 }
             }
-            Expression::Add(a) => {
+            Expression::Add(_, a) => {
                 for arg in &mut *a {
                     arg.occurrence_order_horner_scheme();
                 }
@@ -7169,16 +7109,16 @@ impl Expression<Complex<Rational>> {
 
                 for arg in &*a {
                     match arg {
-                        Expression::Mul(m) => {
+                        Expression::Mul(_, m) => {
                             for aa in m {
-                                if let Expression::Pow(p) = aa
-                                    && !matches!(p.0, Expression::Const(_))
+                                if let Expression::Pow(_, p) = aa
+                                    && !matches!(p.0, Expression::Const(_, _))
                                 {
                                     occurrence
                                         .entry(p.0.clone())
                                         .and_modify(|x| *x += 1)
                                         .or_insert(1);
-                                } else if !matches!(aa, Expression::Const(_)) {
+                                } else if !matches!(aa, Expression::Const(_, _)) {
                                     occurrence
                                         .entry(aa.clone())
                                         .and_modify(|x| *x += 1)
@@ -7187,14 +7127,14 @@ impl Expression<Complex<Rational>> {
                             }
                         }
                         x => {
-                            if let Expression::Pow(p) = x
-                                && !matches!(p.0, Expression::Const(_))
+                            if let Expression::Pow(_, p) = x
+                                && !matches!(p.0, Expression::Const(_, _))
                             {
                                 occurrence
                                     .entry(p.0.clone())
                                     .and_modify(|x| *x += 1)
                                     .or_insert(1);
-                            } else if !matches!(x, Expression::Const(_)) {
+                            } else if !matches!(x, Expression::Const(_, _)) {
                                 occurrence
                                     .entry(x.clone())
                                     .and_modify(|x| *x += 1)
@@ -7211,28 +7151,28 @@ impl Expression<Complex<Rational>> {
 
                 self.apply_horner_scheme(&scheme);
             }
-            Expression::Mul(a) => {
+            Expression::Mul(_, a) => {
                 for arg in a {
                     arg.occurrence_order_horner_scheme();
                 }
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 p.0.occurrence_order_horner_scheme();
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 p.0.occurrence_order_horner_scheme();
                 p.1.occurrence_order_horner_scheme();
             }
-            Expression::BuiltinFun(_, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.occurrence_order_horner_scheme();
             }
-            Expression::SubExpression(_) => {}
-            Expression::ExternalFun(_, a) => {
+            Expression::SubExpression(_, _) => {}
+            Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.occurrence_order_horner_scheme();
                 }
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 b.0.occurrence_order_horner_scheme();
                 b.1.occurrence_order_horner_scheme();
                 b.2.occurrence_order_horner_scheme();
@@ -7262,7 +7202,7 @@ impl Expression<Complex<Rational>> {
             .map(|x| {
                 let mut h = x.clone();
                 h.apply_horner_scheme(vars);
-                h
+                h.rehashed(true)
             })
             .collect();
         let mut subexpr = HashMap::default();
@@ -7274,7 +7214,7 @@ impl Expression<Complex<Rational>> {
 
         if settings.verbose {
             info!(
-                "Initial ops: {} additions and {} multiplications",
+                "Initial Horner scheme ops: {} additions and {} multiplications",
                 best_ops.0, best_ops.1
             );
         }
@@ -7282,6 +7222,8 @@ impl Expression<Complex<Rational>> {
         let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
         let best_add = Arc::new(AtomicUsize::new(best_ops.0));
         let best_scheme = Arc::new(Mutex::new(vars.to_vec()));
+
+        let n_iterations = settings.horner_iterations.max(1) - 1;
 
         let permutations = if vars.len() < 10
             && Integer::factorial(vars.len() as u32) <= settings.horner_iterations.max(1)
@@ -7297,7 +7239,8 @@ impl Expression<Complex<Rational>> {
             settings.n_cores
         } else {
             1
-        };
+        }
+        .min(n_iterations);
 
         std::thread::scope(|s| {
             let abort = Arc::new(AtomicBool::new(false));
@@ -7314,7 +7257,7 @@ impl Expression<Complex<Rational>> {
                 let abort = abort.clone();
 
                 let mut op = move || {
-                    for j in 0..settings.horner_iterations / n_cores {
+                    for j in 0..n_iterations / n_cores {
                         if abort.load(Ordering::Relaxed) {
                             return;
                         }
@@ -7359,7 +7302,8 @@ impl Expression<Complex<Rational>> {
                             .map(|x| {
                                 let mut h = x.clone();
                                 h.apply_horner_scheme(&cvars);
-                                h.to_hashed_expression().1
+                                h.rehash(true);
+                                h
                             })
                             .collect();
                         let mut subexpr = HashMap::default();
@@ -7439,64 +7383,64 @@ impl Expression<Complex<Rational>> {
 
     fn find_all_variables(&self, vars: &mut HashMap<Expression<Complex<Rational>>, usize>) {
         match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in ae {
                     arg.find_all_variables(vars);
                 }
             }
-            Expression::Add(a) => {
+            Expression::Add(_, a) => {
                 for arg in a {
                     arg.find_all_variables(vars);
                 }
 
                 for arg in a {
                     match arg {
-                        Expression::Mul(m) => {
+                        Expression::Mul(_, m) => {
                             for aa in m {
-                                if let Expression::Pow(p) = aa
-                                    && !matches!(p.0, Expression::Const(_))
+                                if let Expression::Pow(_, p) = aa
+                                    && !matches!(p.0, Expression::Const(_, _))
                                 {
                                     vars.entry(p.0.clone()).and_modify(|x| *x += 1).or_insert(1);
-                                } else if !matches!(aa, Expression::Const(_)) {
+                                } else if !matches!(aa, Expression::Const(_, _)) {
                                     vars.entry(aa.clone()).and_modify(|x| *x += 1).or_insert(1);
                                 }
                             }
                         }
                         x => {
-                            if let Expression::Pow(p) = x
-                                && !matches!(p.0, Expression::Const(_))
+                            if let Expression::Pow(_, p) = x
+                                && !matches!(p.0, Expression::Const(_, _))
                             {
                                 vars.entry(p.0.clone()).and_modify(|x| *x += 1).or_insert(1);
-                            } else if !matches!(x, Expression::Const(_)) {
+                            } else if !matches!(x, Expression::Const(_, _)) {
                                 vars.entry(x.clone()).and_modify(|x| *x += 1).or_insert(1);
                             }
                         }
                     }
                 }
             }
-            Expression::Mul(a) => {
+            Expression::Mul(_, a) => {
                 for arg in a {
                     arg.find_all_variables(vars);
                 }
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 p.0.find_all_variables(vars);
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 p.0.find_all_variables(vars);
                 p.1.find_all_variables(vars);
             }
-            Expression::BuiltinFun(_, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.find_all_variables(vars);
             }
-            Expression::SubExpression(_) => {}
-            Expression::ExternalFun(_, a) => {
+            Expression::SubExpression(_, _) => {}
+            Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.find_all_variables(vars);
                 }
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 b.0.find_all_variables(vars);
                 b.1.find_all_variables(vars);
                 b.2.find_all_variables(vars);
@@ -7534,42 +7478,37 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
     /// Eliminate common subexpressions in the expression, also checking for subexpressions
     /// up to length `max_subexpr_len`.
     pub fn common_subexpression_elimination(&mut self) {
-        let mut h = HashMap::default();
+        let mut subexpression_count = HashMap::default();
 
-        let mut hashed_tree = vec![];
-        for t in &self.tree {
-            let (_, t) = t.to_hashed_expression();
-            hashed_tree.push(t);
+        for t in &mut self.tree {
+            t.rehash(true);
+            t.find_subexpression(&mut subexpression_count);
         }
 
-        for t in &hashed_tree {
-            t.find_subexpression(&mut h);
-        }
+        subexpression_count.retain(|_, v| *v > 1);
 
-        h.retain(|_, v| *v > 1);
-
-        let mut v: Vec<_> = h.iter().map(|(k, v)| (*v, (*k).clone())).collect();
+        let mut v: Vec<_> = subexpression_count
+            .iter()
+            .map(|(k, v)| (*v, (*k).clone()))
+            .collect();
         v.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
-        // make the second argument a unique index of the subexpression
-        for (i, (index, e)) in v.iter_mut().enumerate() {
-            *index = self.subexpressions.len() + i;
-            *h.get_mut(e).unwrap() = *index;
+        // assign a unique index to every subexpression
+        let mut h = HashMap::default();
+        for (index, (_, e)) in v.iter().enumerate() {
+            h.insert(&*e, self.subexpressions.len() + index);
         }
 
-        let mut n_hash_tree = hashed_tree.clone();
-        for t in &mut n_hash_tree {
+        for t in &mut self.tree {
             t.replace_subexpression(&h, false);
         }
 
-        self.tree = n_hash_tree.iter().map(|x| x.to_expression()).collect();
-
         // replace subexpressions in subexpressions and
         // sort them based on their dependencies
-        for (_, x) in v {
+        for (_, x) in &v {
             let mut he = x.clone();
             he.replace_subexpression(&h, true);
-            self.subexpressions.push(he.to_expression());
+            self.subexpressions.push(he);
         }
 
         let mut dep_tree = vec![];
@@ -7609,38 +7548,38 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering> Expression<T> {
     fn rename_subexpression(&mut self, subexp: &HashMap<usize, usize>) {
         match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in &mut *ae {
                     arg.rename_subexpression(subexp);
                 }
             }
-            Expression::Add(a) | Expression::Mul(a) => {
+            Expression::Add(_, a) | Expression::Mul(_, a) => {
                 for arg in &mut *a {
                     arg.rename_subexpression(subexp);
                 }
 
                 a.sort();
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 p.0.rename_subexpression(subexp);
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 p.0.rename_subexpression(subexp);
                 p.1.rename_subexpression(subexp);
             }
-            Expression::BuiltinFun(_, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.rename_subexpression(subexp);
             }
-            Expression::SubExpression(i) => {
-                *self = Expression::SubExpression(*subexp.get(i).unwrap());
+            Expression::SubExpression(h, i) => {
+                *self = Expression::SubExpression(*h, *subexp.get(i).unwrap());
             }
-            Expression::ExternalFun(_, a) => {
+            Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.rename_subexpression(subexp);
                 }
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 b.0.rename_subexpression(subexp);
                 b.1.rename_subexpression(subexp);
                 b.2.rename_subexpression(subexp);
@@ -7650,36 +7589,36 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
 
     fn get_dependent_subexpressions(&self, dep: &mut Vec<usize>) {
         match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
+            Expression::Const(_, _) | Expression::Parameter(_, _) | Expression::ReadArg(_, _) => {}
+            Expression::Eval(_, _, ae) => {
                 for arg in ae {
                     arg.get_dependent_subexpressions(dep);
                 }
             }
-            Expression::Add(a) | Expression::Mul(a) => {
+            Expression::Add(_, a) | Expression::Mul(_, a) => {
                 for arg in a {
                     arg.get_dependent_subexpressions(dep);
                 }
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 p.0.get_dependent_subexpressions(dep);
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 p.0.get_dependent_subexpressions(dep);
                 p.1.get_dependent_subexpressions(dep);
             }
-            Expression::BuiltinFun(_, a) => {
+            Expression::BuiltinFun(_, _, a) => {
                 a.get_dependent_subexpressions(dep);
             }
-            Expression::SubExpression(i) => {
+            Expression::SubExpression(_, i) => {
                 dep.push(*i);
             }
-            Expression::ExternalFun(_, a) => {
+            Expression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.get_dependent_subexpressions(dep);
                 }
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 b.0.get_dependent_subexpressions(dep);
                 b.1.get_dependent_subexpressions(dep);
                 b.2.get_dependent_subexpressions(dep);
@@ -7714,9 +7653,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
     // Count the number of additions and multiplications in the expression.
     pub fn count_operations(&self) -> (usize, usize) {
         match self {
-            Expression::Const(_) => (0, 0),
-            Expression::Parameter(_) => (0, 0),
-            Expression::Eval(_, args) => {
+            Expression::Const(_, _) => (0, 0),
+            Expression::Parameter(_, _) => (0, 0),
+            Expression::Eval(_, _, args) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in args {
@@ -7726,7 +7665,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 }
                 (add, mul)
             }
-            Expression::Add(a) => {
+            Expression::Add(_, a) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in a {
@@ -7736,7 +7675,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 }
                 (add + a.len() - 1, mul)
             }
-            Expression::Mul(m) => {
+            Expression::Mul(_, m) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in m {
@@ -7746,19 +7685,19 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 }
                 (add, mul + m.len() - 1)
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 let (a, m) = p.0.count_operations();
                 (a, m + p.1.unsigned_abs() as usize - 1)
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 let (a, m) = p.0.count_operations();
                 let (a2, m2) = p.1.count_operations();
                 (a + a2, m + m2 + 1) // not clear how to count this
             }
-            Expression::ReadArg(_) => (0, 0),
-            Expression::BuiltinFun(_, b) => b.count_operations(), // not clear how to count this, third arg?
-            Expression::SubExpression(_) => (0, 0),
-            Expression::ExternalFun(_, args) => {
+            Expression::ReadArg(_, _) => (0, 0),
+            Expression::BuiltinFun(_, _, b) => b.count_operations(), // not clear how to count this, third arg?
+            Expression::SubExpression(_, _) => (0, 0),
+            Expression::ExternalFun(_, _, args) => {
                 let mut add = 0;
                 let mut mul = 0;
                 for arg in args {
@@ -7768,93 +7707,10 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 }
                 (add, mul)
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 let (a1, m1) = b.0.count_operations();
                 let (a2, m2) = b.1.count_operations();
                 let (a3, m3) = b.2.count_operations();
-                (a1 + a2 + a3, m1 + m2 + m3)
-            }
-        }
-    }
-
-    // Count the number of additions and multiplications in the expression, counting
-    // subexpressions only once.
-    pub fn count_operations_with_subexpression<'a>(
-        &'a self,
-        sub_expr: &mut HashMap<&'a Self, usize>,
-    ) -> (usize, usize) {
-        if matches!(
-            self,
-            Expression::Const(_) | Expression::Parameter(_,) | Expression::ReadArg(_)
-        ) {
-            return (0, 0);
-        }
-
-        if sub_expr.contains_key(self) {
-            return (0, 0);
-        }
-
-        sub_expr.insert(self, 1);
-
-        match self {
-            Expression::Const(_) => (0, 0),
-            Expression::Parameter(_) => (0, 0),
-            Expression::Eval(_, args) => {
-                let mut add = 0;
-                let mut mul = 0;
-                for arg in args {
-                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
-                    add += a;
-                    mul += m;
-                }
-                (add, mul)
-            }
-            Expression::Add(a) => {
-                let mut add = 0;
-                let mut mul = 0;
-                for arg in a {
-                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
-                    add += a;
-                    mul += m;
-                }
-                (add + a.len() - 1, mul)
-            }
-            Expression::Mul(m) => {
-                let mut add = 0;
-                let mut mul = 0;
-                for arg in m {
-                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
-                    add += a;
-                    mul += m;
-                }
-                (add, mul + m.len() - 1)
-            }
-            Expression::Pow(p) => {
-                let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
-                (a, m + p.1.unsigned_abs() as usize - 1)
-            }
-            Expression::Powf(p) => {
-                let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
-                let (a2, m2) = p.1.count_operations_with_subexpression(sub_expr);
-                (a + a2, m + m2 + 1) // not clear how to count this
-            }
-            Expression::ReadArg(_) => (0, 0),
-            Expression::BuiltinFun(_, b) => b.count_operations_with_subexpression(sub_expr), // not clear how to count this, third arg?
-            Expression::SubExpression(_) => (0, 0),
-            Expression::ExternalFun(_, args) => {
-                let mut add = 0;
-                let mut mul = 0;
-                for arg in args {
-                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
-                    add += a;
-                    mul += m;
-                }
-                (add, mul)
-            }
-            Expression::IfElse(b) => {
-                let (a1, m1) = b.0.count_operations_with_subexpression(sub_expr);
-                let (a2, m2) = b.1.count_operations_with_subexpression(sub_expr);
-                let (a3, m3) = b.2.count_operations_with_subexpression(sub_expr);
                 (a1 + a2 + a3, m1 + m2 + m3)
             }
         }
@@ -7877,32 +7733,32 @@ impl<T: Real> EvalTree<T> {
         args: &[T],
     ) -> T {
         match expr {
-            Expression::Const(c) => c.clone(),
-            Expression::Parameter(p) => params[*p].clone(),
-            Expression::Eval(f, e_args) => {
+            Expression::Const(_, c) => c.as_ref().clone(),
+            Expression::Parameter(_, p) => params[*p].clone(),
+            Expression::Eval(_, f, e_args) => {
                 let mut arg_buf = vec![T::new_zero(); e_args.len()];
                 for (b, a) in arg_buf.iter_mut().zip(e_args.iter()) {
                     *b = self.evaluate_impl(a, subexpressions, params, args);
                 }
 
-                let func = &self.functions[*f].2;
+                let func = &self.functions[*f as usize].2;
                 self.evaluate_impl(&func.tree[0], &func.subexpressions, params, &arg_buf)
             }
-            Expression::Add(a) => {
+            Expression::Add(_, a) => {
                 let mut r = self.evaluate_impl(&a[0], subexpressions, params, args);
                 for arg in &a[1..] {
                     r += self.evaluate_impl(arg, subexpressions, params, args);
                 }
                 r
             }
-            Expression::Mul(m) => {
+            Expression::Mul(_, m) => {
                 let mut r = self.evaluate_impl(&m[0], subexpressions, params, args);
                 for arg in &m[1..] {
                     r *= self.evaluate_impl(arg, subexpressions, params, args);
                 }
                 r
             }
-            Expression::Pow(p) => {
+            Expression::Pow(_, p) => {
                 let (b, e) = &**p;
                 let b_eval = self.evaluate_impl(b, subexpressions, params, args);
 
@@ -7912,14 +7768,14 @@ impl<T: Real> EvalTree<T> {
                     b_eval.pow(e.unsigned_abs()).inv()
                 }
             }
-            Expression::Powf(p) => {
+            Expression::Powf(_, p) => {
                 let (b, e) = &**p;
                 let b_eval = self.evaluate_impl(b, subexpressions, params, args);
                 let e_eval = self.evaluate_impl(e, subexpressions, params, args);
                 b_eval.powf(&e_eval)
             }
-            Expression::ReadArg(i) => args[*i].clone(),
-            Expression::BuiltinFun(s, a) => {
+            Expression::ReadArg(_, i) => args[*i].clone(),
+            Expression::BuiltinFun(_, s, a) => {
                 let arg = self.evaluate_impl(a, subexpressions, params, args);
                 match s.0.get_id() {
                     Symbol::EXP_ID => arg.exp(),
@@ -7932,17 +7788,17 @@ impl<T: Real> EvalTree<T> {
                     _ => unreachable!(),
                 }
             }
-            Expression::SubExpression(s) => {
+            Expression::SubExpression(_, s) => {
                 // TODO: cache
                 self.evaluate_impl(&subexpressions[*s], subexpressions, params, args)
             }
-            Expression::ExternalFun(name, _args) => {
+            Expression::ExternalFun(_, name, _args) => {
                 unimplemented!(
                     "External function calls not implemented for EvalTree: {}",
                     name
                 );
             }
-            Expression::IfElse(b) => {
+            Expression::IfElse(_, b) => {
                 let cond = self.evaluate_impl(&b.0, subexpressions, params, args);
                 if !cond.is_fully_zero() {
                     self.evaluate_impl(&b.1, subexpressions, params, args)
@@ -9917,16 +9773,13 @@ impl<'a> AtomView<'a> {
     ) -> Result<EvalTree<Complex<Rational>>, String> {
         let mut funcs = vec![];
         let mut func_id_to_index = HashMap::default();
+
         let tree = exprs
             .iter()
             .map(|t| {
-                t.as_atom_view().to_eval_tree_impl(
-                    fn_map,
-                    params,
-                    &[],
-                    &mut func_id_to_index,
-                    &mut funcs,
-                )
+                t.as_atom_view()
+                    .to_eval_tree_impl(fn_map, params, &[], &mut func_id_to_index, &mut funcs)
+                    .map(|x| x.rehashed(true))
             })
             .collect::<Result<_, _>>()?;
 
@@ -9968,33 +9821,40 @@ impl<'a> AtomView<'a> {
     ) -> Result<Expression<Complex<Rational>>, String> {
         if matches!(self, AtomView::Var(_) | AtomView::Fun(_)) {
             if let Some(p) = args.iter().position(|s| *self == s.as_view()) {
-                return Ok(Expression::ReadArg(p));
+                return Ok(Expression::ReadArg(0, p));
             }
 
             if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
-                return Ok(Expression::Parameter(p));
+                return Ok(Expression::Parameter(0, p));
             }
         }
 
         if let Some(c) = fn_map.get_constant(*self) {
-            return Ok(Expression::Const(c.clone()));
+            return Ok(Expression::Const(0, Box::new(c.clone())));
         }
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d, ni, di) => Ok(Expression::Const(Complex::new(
-                    Rational::from((n, d)),
-                    Rational::from((ni, di)),
-                ))),
-                CoefficientView::Large(l, i) => {
-                    Ok(Expression::Const(Complex::new(l.to_rat(), i.to_rat())))
-                }
+                CoefficientView::Natural(n, d, ni, di) => Ok(Expression::Const(
+                    0,
+                    Box::new(Complex::new(
+                        Rational::from((n, d)),
+                        Rational::from((ni, di)),
+                    )),
+                )),
+                CoefficientView::Large(l, i) => Ok(Expression::Const(
+                    0,
+                    Box::new(Complex::new(l.to_rat(), i.to_rat())),
+                )),
                 CoefficientView::Float(r, i) => {
                     // TODO: converting back to rational is slow
-                    Ok(Expression::Const(Complex::new(
-                        r.to_float().to_rational(),
-                        i.to_float().to_rational(),
-                    )))
+                    Ok(Expression::Const(
+                        0,
+                        Box::new(Complex::new(
+                            r.to_float().to_rational(),
+                            i.to_float().to_rational(),
+                        )),
+                    ))
                 }
                 CoefficientView::Indeterminate => {
                     panic!("Cannot convert indeterminate")
@@ -10031,6 +9891,7 @@ impl<'a> AtomView<'a> {
                     let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
                     return Ok(Expression::BuiltinFun(
+                        0,
                         BuiltinSymbol(f.get_symbol()),
                         Box::new(arg_eval),
                     ));
@@ -10045,7 +9906,7 @@ impl<'a> AtomView<'a> {
                 };
 
                 match fun {
-                    ConstOrExpr::Const(t) => Ok(Expression::Const(t.clone())),
+                    ConstOrExpr::Const(t) => Ok(Expression::Const(0, Box::new(t.clone()))),
                     ConstOrExpr::External(e, _name) => {
                         let eval_args = f
                             .iter()
@@ -10053,7 +9914,7 @@ impl<'a> AtomView<'a> {
                                 arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)
                             })
                             .collect::<Result<_, _>>()?;
-                        Ok(Expression::ExternalFun(*e, eval_args))
+                        Ok(Expression::ExternalFun(0, *e as u32, eval_args))
                     }
                     ConstOrExpr::Expr(Expr {
                         id,
@@ -10080,7 +9941,7 @@ impl<'a> AtomView<'a> {
                             .collect::<Result<_, _>>()?;
 
                         if let Some(pos) = fn_id_map.get(id) {
-                            Ok(Expression::Eval(*pos, eval_args))
+                            Ok(Expression::Eval(0, *pos as u32, eval_args))
                         } else {
                             let r = e
                                 .as_view()
@@ -10094,7 +9955,7 @@ impl<'a> AtomView<'a> {
                                 },
                             ));
                             fn_id_map.insert(*id, funcs.len() - 1);
-                            Ok(Expression::Eval(funcs.len() - 1, eval_args))
+                            Ok(Expression::Eval(0, funcs.len() as u32 - 1, eval_args))
                         }
                     }
                     ConstOrExpr::Condition => {
@@ -10112,7 +9973,7 @@ impl<'a> AtomView<'a> {
                             .unwrap()
                             .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
-                        if let Expression::Const(c) = &cond_eval {
+                        if let Expression::Const(0, c) = &cond_eval {
                             if !c.is_zero() {
                                 let t_eval = arg_iter
                                     .next()
@@ -10138,7 +9999,7 @@ impl<'a> AtomView<'a> {
                             .unwrap()
                             .to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
 
-                        Ok(Expression::IfElse(Box::new((cond_eval, t_eval, f_eval))))
+                        Ok(Expression::IfElse(0, Box::new((cond_eval, t_eval, f_eval))))
                     }
                 }
             }
@@ -10151,17 +10012,17 @@ impl<'a> AtomView<'a> {
                     && den == 1
                     && num_i == 0
                 {
-                    return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
+                    return Ok(Expression::Pow(0, Box::new((b_eval.clone(), num))));
                 }
 
                 let e_eval = e.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
-                Ok(Expression::Powf(Box::new((b_eval, e_eval))))
+                Ok(Expression::Powf(0, Box::new((b_eval, e_eval))))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
                     let a = arg.to_eval_tree_impl(fn_map, params, args, fn_id_map, funcs)?;
-                    if let Expression::Mul(m) = a {
+                    if let Expression::Mul(0, m) = a {
                         muls.extend(m);
                     } else {
                         muls.push(a);
@@ -10170,7 +10031,7 @@ impl<'a> AtomView<'a> {
 
                 muls.sort();
 
-                Ok(Expression::Mul(muls))
+                Ok(Expression::Mul(0, muls))
             }
             AtomView::Add(a) => {
                 let mut adds = vec![];
@@ -10180,7 +10041,7 @@ impl<'a> AtomView<'a> {
 
                 adds.sort();
 
-                Ok(Expression::Add(adds))
+                Ok(Expression::Add(0, adds))
             }
         }
     }

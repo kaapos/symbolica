@@ -73,7 +73,7 @@ impl AtomView<'_> {
         let f = self
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))?
             .optimize(&OptimizationSettings {
-                horner_iterations: 0,
+                horner_iterations: 1,
                 n_cores: 0,
                 cpe_iterations: None,
                 hot_start: None,
@@ -85,7 +85,7 @@ impl AtomView<'_> {
             .derivative(x)
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))?
             .optimize(&OptimizationSettings {
-                horner_iterations: 0,
+                horner_iterations: 1,
                 n_cores: 0,
                 cpe_iterations: None,
                 hot_start: None,
@@ -172,7 +172,7 @@ impl AtomView<'_> {
             .map(|a| {
                 Ok(a.to_evaluation_tree(&FunctionMap::new(), &avars)?
                     .optimize(&OptimizationSettings {
-                        horner_iterations: 0,
+                        horner_iterations: 1,
                         n_cores: 0,
                         cpe_iterations: None,
                         hot_start: None,
@@ -193,7 +193,7 @@ impl AtomView<'_> {
                 let a = deriv
                     .to_evaluation_tree(&FunctionMap::new(), &avars)?
                     .optimize(&OptimizationSettings {
-                        horner_iterations: 0,
+                        horner_iterations: 1,
                         n_cores: 0,
                         cpe_iterations: None,
                         hot_start: None,

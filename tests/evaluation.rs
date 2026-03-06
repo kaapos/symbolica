@@ -1063,8 +1063,9 @@ fn generate_evaluator() -> ExpressionEvaluator<Complex<Rational>> {
             &FunctionMap::new(),
             &params,
             OptimizationSettings {
-                horner_iterations: 0,
+                horner_iterations: 1,
                 n_cores: 1,
+                verbose: false,
                 ..Default::default()
             },
         )
