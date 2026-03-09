@@ -1239,9 +1239,21 @@ impl<T: Default> ExpressionEvaluator<T> {
             i += 1;
         }
 
-        // fix labels
+        for x in &mut self.result_indices {
+            *x = rename_map[*x];
+        }
+
+        self.instructions = new_instr;
+
+        self.fix_labels();
+
+        removed
+    }
+
+    /// Set the labels to the their instruction position.
+    fn fix_labels(&mut self) {
         let mut label_map: HashMap<usize, usize> = HashMap::default();
-        for (i, (x, _)) in new_instr.iter_mut().enumerate().rev() {
+        for (i, (x, _)) in self.instructions.iter_mut().enumerate().rev() {
             match x {
                 Instr::Label(l) => {
                     label_map.insert(l.0, i);
@@ -1256,14 +1268,6 @@ impl<T: Default> ExpressionEvaluator<T> {
                 _ => {}
             }
         }
-
-        for x in &mut self.result_indices {
-            *x = rename_map[*x];
-        }
-
-        self.instructions = new_instr;
-
-        removed
     }
 
     /// Remove common pairs of instructions. Assumes that the arguments
@@ -1600,24 +1604,6 @@ impl<T: Default> ExpressionEvaluator<T> {
             }
         }
 
-        // fix labels
-        let mut label_map: HashMap<usize, usize> = HashMap::default();
-        for (i, (x, _)) in new_instr.iter_mut().enumerate().rev() {
-            match x {
-                Instr::Label(l) => {
-                    label_map.insert(l.0, i);
-                    l.0 = i;
-                }
-                Instr::Goto(l) => {
-                    l.0 = label_map[&l.0];
-                }
-                Instr::IfElse(_, l) => {
-                    l.0 = label_map[&l.0];
-                }
-                _ => {}
-            }
-        }
-
         for x in &mut self.result_indices {
             *x = rename!(*x);
         }
@@ -1625,6 +1611,7 @@ impl<T: Default> ExpressionEvaluator<T> {
         assert!(j == placement_bounds.len());
 
         self.instructions = new_instr;
+        self.fix_labels();
 
         total_remove
     }
@@ -5547,6 +5534,7 @@ impl<T: Default + Clone> ExpressionEvaluator<T> {
 
         self.remove_common_pairs();
         self.optimize_stack();
+        self.fix_labels();
 
         Ok(self)
     }
