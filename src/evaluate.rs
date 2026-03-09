@@ -2691,6 +2691,11 @@ extern "C" {{
             res += "typedef double Number;\n";
         }
 
+        if let Some(header) = &settings.custom_header {
+            res += header;
+            res += "\n";
+        }
+
         res += &format!(
             "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
             function_name,
@@ -2819,7 +2824,7 @@ extern "C" {{
                     }
                     Symbol::ABS_ID => {
                         let arg = get_input!(*a);
-                        *out += format!("\t{} = abs({arg});\n", get_output!(o)).as_str();
+                        *out += format!("\t{} = std::abs({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::CONJ_ID => {
                         let arg = get_input!(*a);
@@ -2870,6 +2875,7 @@ extern "C" {{
 
         if let Some(header) = &settings.custom_header {
             res += header;
+            res += "\n";
         }
 
         res += &format!(
@@ -2920,6 +2926,7 @@ extern "C" {{
 
         if let Some(header) = &settings.custom_header {
             res += header;
+            res += "\n";
         }
 
         res += &format!(
@@ -3967,7 +3974,7 @@ extern "C" {{
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
                         Symbol::ABS_ID => {
-                            *out += format!("\tZ[{o}] = abs({arg});\n").as_str();
+                            *out += format!("\tZ[{o}] = std::abs({arg});\n").as_str();
                         }
                         Symbol::CONJ_ID => {
                             *out += format!("\tZ[{o}] = {arg};\n").as_str();
@@ -4672,7 +4679,7 @@ extern "C" {{
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
                         Symbol::ABS_ID => {
-                            *out += format!("\tZ[{o}] = abs({arg});\n").as_str();
+                            *out += format!("\tZ[{o}] = std::abs({arg});\n").as_str();
                         }
                         Symbol::CONJ_ID => {
                             if let ComplexPhase::Real = *c {
