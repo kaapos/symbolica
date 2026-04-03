@@ -2749,8 +2749,6 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut pi = PrimeIteratorU64::new(101);
         let mut field;
         'new_prime: loop {
-            i += 1;
-
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
                 panic!("Ran out of primes during factorization of {self}");

@@ -723,19 +723,20 @@ impl Echelonize for Zp {
         for r in 0..matrix.len() {
             // identify all pivots
             if let Some((coeff, col)) = matrix[r].first_mut()
-                && pivots[*col].is_none() {
-                    pivots[*col] = Some(r);
-                    pc += 1;
+                && pivots[*col].is_none()
+            {
+                pivots[*col] = Some(r);
+                pc += 1;
 
-                    if *coeff != 1 {
-                        let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
+                if *coeff != 1 {
+                    let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
 
-                        for (coeff, _) in &mut matrix[r] {
-                            *coeff *= inv_pivot as i64;
-                            *coeff %= field.get_prime() as i64;
-                        }
+                    for (coeff, _) in &mut matrix[r] {
+                        *coeff *= inv_pivot as i64;
+                        *coeff %= field.get_prime() as i64;
                     }
                 }
+            }
         }
 
         if print_stats {
@@ -748,19 +749,19 @@ impl Echelonize for Zp {
             }
 
             if let Some((coeff, col)) = matrix[r].first_mut()
-                && pivots[*col].is_none() {
-                    pivots[*col] = Some(r);
-                    pc += 1;
+                && pivots[*col].is_none()
+            {
+                pivots[*col] = Some(r);
 
-                    if *coeff != 1 {
-                        let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
+                if *coeff != 1 {
+                    let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
 
-                        for (coeff, _) in &mut matrix[r] {
-                            *coeff *= inv_pivot as i64;
-                            *coeff %= field.get_prime() as i64;
-                        }
+                    for (coeff, _) in &mut matrix[r] {
+                        *coeff *= inv_pivot as i64;
+                        *coeff %= field.get_prime() as i64;
                     }
                 }
+            }
 
             // do not reduce pivots
             if pivots.contains(&Some(r)) {
