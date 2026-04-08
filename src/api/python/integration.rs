@@ -567,6 +567,10 @@ impl PythonNumericalIntegrator {
     }
 
     /// Update the grid using the `discrete_learning_rate` and `continuous_learning_rate`.
+    ///
+    /// When `weighted_average=True`, a weighted average and error is computed using
+    /// the iteration variances as a weight. When `weighted_average=False` (default),
+    /// a simple average of all samples is used.
     /// Examples
     /// --------
     /// >>> from symbolica import NumericalIntegrator, Sample
@@ -591,13 +595,20 @@ impl PythonNumericalIntegrator {
     ///     The learning rate for discrete layers.
     /// continuous_learning_rate: float
     ///     The learning rate for continuous layers.
+    /// weighted_average: bool
+    ///     Whether iteration variances should be used as weights.
+    #[pyo3(signature = (discrete_learning_rate, continuous_learning_rate, weighted_average = false))]
     fn update(
         &mut self,
         discrete_learning_rate: f64,
         continuous_learning_rate: f64,
+        weighted_average: bool,
     ) -> PyResult<(f64, f64, f64)> {
-        self.grid
-            .update(discrete_learning_rate, continuous_learning_rate);
+        self.grid.update(
+            discrete_learning_rate,
+            continuous_learning_rate,
+            weighted_average,
+        );
 
         let stats = self.grid.get_statistics();
         Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
@@ -609,6 +620,10 @@ impl PythonNumericalIntegrator {
     /// With `show_stats=True`, intermediate statistics will be printed. `max_n_iter` determines the number
     /// of iterations and `n_samples_per_iter` determine the number of samples per iteration. This is
     /// the same amount of samples that the integrand function will be called with.
+    ///
+    /// When `weighted_average=True`, a weighted average and error is computed using
+    /// the iteration variances as a weight. When `weighted_average=False` (default),
+    /// a simple average of all samples is used.
     ///
     /// For more flexibility, use `sample`, `add_training_samples` and `update`. See `update` for an example.
     ///
@@ -639,13 +654,16 @@ impl PythonNumericalIntegrator {
     ///     The seed used to initialize the random number generator.
     /// show_stats: bool
     ///     Whether intermediate integration statistics should be shown.
+    /// weighted_average: bool
+    ///     Whether iteration variances should be used as weights.
     #[pyo3(signature =
         (integrand,
         max_n_iter = 10_000_000,
         min_error = 0.01,
         n_samples_per_iter = 10_000,
         seed = 0,
-        show_stats = true)
+        show_stats = true,
+        weighted_average = false)
     )]
     pub fn integrate(
         &mut self,
@@ -659,6 +677,7 @@ impl PythonNumericalIntegrator {
         n_samples_per_iter: usize,
         seed: u64,
         show_stats: bool,
+        weighted_average: bool,
     ) -> PyResult<(f64, f64, f64)> {
         let mut rng = MonteCarloRng::new(seed, 0);
 
@@ -684,7 +703,7 @@ impl PythonNumericalIntegrator {
                 self.grid.add_training_sample(s, r).unwrap();
             }
 
-            self.grid.update(1.5, 1.5);
+            self.grid.update(1.5, 1.5, weighted_average);
 
             let stats = self.grid.get_statistics();
             if show_stats {
