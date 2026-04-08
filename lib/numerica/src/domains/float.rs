@@ -1880,6 +1880,10 @@ impl Real for DoubleFloat {
 
     #[inline(always)]
     fn powf(&self, e: &Self) -> Self {
+        if self.0.hi() == 0. && e.0.hi() > 0. {
+            return 0f64.into();
+        }
+
         self.0.powf(e.0).into()
     }
 }
