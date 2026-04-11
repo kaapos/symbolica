@@ -1474,6 +1474,51 @@ impl DoubleFloat {
     fn is_nan(&self) -> bool {
         self.0.hi().is_nan() || self.0.lo().is_nan()
     }
+
+    #[inline]
+    fn binary_exp(mut base: Df64, mut exp: u64) -> Df64 {
+        let mut result = Df64::ONE;
+
+        while exp != 0 {
+            if exp & 1 == 1 {
+                result *= base;
+            }
+            exp >>= 1;
+            if exp != 0 {
+                base *= base;
+            }
+        }
+
+        result
+    }
+
+    #[inline]
+    fn powi(base: Df64, exp: i64) -> Df64 {
+        if exp >= 0 {
+            Self::binary_exp(base, exp as u64)
+        } else {
+            Self::binary_exp(base, exp.unsigned_abs()).recip()
+        }
+    }
+
+    #[inline]
+    fn get_integer_exponent(exp: Df64) -> Option<i64> {
+        if !exp.hi().is_finite() {
+            return None;
+        }
+
+        let truncated = exp.trunc();
+        if exp != truncated {
+            return None;
+        }
+
+        let hi = truncated.hi();
+        if !(i64::MIN as f64..=i64::MAX as f64).contains(&hi) {
+            return None;
+        }
+
+        Some(hi as i64)
+    }
 }
 
 impl FloatLike for DoubleFloat {
@@ -1511,12 +1556,16 @@ impl FloatLike for DoubleFloat {
     fn pow(&self, e: u64) -> Self {
         debug_assert!(e <= i32::MAX as u64);
 
-        if self.0.is_sign_negative() {
-            let r = (-self.0).powi(e as i32).into(); // prevent log of negative number in Df64::powi
-            if e % 2 == 0 { r } else { -r }
-        } else {
-            self.0.powi(e as i32).into()
+        // `Df64::powi` is implemented as `exp(e * log(self))` and does not handle base <= 0
+        if e == 0 {
+            return 1f64.into();
         }
+
+        if !self.0.hi().is_finite() {
+            return self.0.hi().powi(e as i32).into();
+        }
+
+        Self::binary_exp(self.0, e).into()
     }
 
     #[inline(always)]
@@ -1886,8 +1935,28 @@ impl Real for DoubleFloat {
 
     #[inline(always)]
     fn powf(&self, e: &Self) -> Self {
-        if self.0.hi() == 0. && e.0.hi() > 0. {
-            return 0f64.into();
+        if e.0 == Df64::ZERO || self.0 == Df64::ONE {
+            return 1f64.into();
+        }
+
+        if self.0 == Df64::from(-1.0) && e.0.hi().is_infinite() {
+            return 1f64.into();
+        }
+
+        if self.is_nan() || e.is_nan() {
+            return Df64::NAN.into();
+        }
+
+        if self.0.hi() == 0.0 {
+            return self.0.hi().powf(e.0.hi()).into();
+        }
+
+        if let Some(integer_exponent) = Self::get_integer_exponent(e.0) {
+            return Self::powi(self.0, integer_exponent).into();
+        }
+
+        if self.0.hi().is_sign_negative() || !self.0.hi().is_finite() || !e.0.hi().is_finite() {
+            return self.0.hi().powf(e.0.hi()).into();
         }
 
         self.0.powf(e.0).into()
@@ -5291,7 +5360,9 @@ impl_stub_type!(Complex<Float> = Complex64);
 mod test {
     use rug::Complete;
 
-    use super::{Complex, DoubleFloat, ErrorPropagatingFloat, Float, FloatLike, Rational, Real};
+    use super::{
+        Complex, DoubleFloat, ErrorPropagatingFloat, Float, FloatLike, Rational, Real, RealLike,
+    };
 
     fn eval_test<T: Real>(v: &[T]) -> T {
         v[0].sqrt() + v[1].log() + v[1].sin() - v[0].cos() + v[1].tan() - v[2].asin() + v[3].acos()
