@@ -1860,6 +1860,16 @@ impl Real for DoubleFloat {
 
     #[inline(always)]
     fn sqrt(&self) -> Self {
+        let hi = self.0.hi();
+        if hi == 0. {
+            // avoid relying on subnormals inside the compensated sqrt path,
+            // as DAZ (Denormals Are Zero) may be enabled
+            return hi.into();
+        }
+        if hi < 0.0 || !hi.is_finite() {
+            return hi.sqrt().into();
+        }
+
         self.0.sqrt().into()
     }
 
