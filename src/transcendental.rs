@@ -138,6 +138,9 @@ impl SpecialSymbols {
     fn new() -> Self {
         let euler_gamma = symbol!(
             "euler_gamma",
+            der = |_x, _i, out| {
+                out.to_num(Coefficient::zero());
+            },
             eval = EvaluationInfo::new(0, |_tags, args, prec| {
                 if !args.is_empty() {
                     return Err(format!(
@@ -1017,7 +1020,6 @@ impl BesselSymbols {
                 if let Some((nu, z)) = binary_arguments(x) {
                     if z.is_zero()
                         && let Some(n) = atom_to_integer(nu)
-                        && n >= 0
                     {
                         if n == 0 {
                             out.to_num(Coefficient::one());
