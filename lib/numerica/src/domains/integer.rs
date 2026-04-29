@@ -795,6 +795,111 @@ impl Integer {
         }
     }
 
+    fn get_single_factor(&self) -> Integer {
+        if self.is_prime(24) {
+            return self.clone();
+        }
+
+        if self % 2 == 0 {
+            return 2.into();
+        }
+
+        if let Some(c) = self.to_u64() {
+            Zp64::new(c).pollard_brent_rho().into()
+        } else {
+            FiniteField::<Integer>::new(self.clone()).pollard_brent_rho()
+        }
+    }
+
+    /// Factor the integer, yielding unsorted and unmerged `(factor, exponent)` pairs in `factors`.
+    fn factor_into(&self, factors: &mut Vec<(Integer, Integer)>) {
+        let mut n = self.clone();
+
+        if n < 2 {
+            if factors.is_empty() {
+                factors.push((n, Integer::one()));
+            }
+            return;
+        }
+
+        let mut fac_count = Integer::zero();
+        while &n % 2 == 0 {
+            n /= 2;
+            fac_count += 1;
+        }
+
+        if fac_count > 0 {
+            factors.push((Integer::Single(2), fac_count));
+        }
+
+        while n > 1 {
+            let f = n.get_single_factor();
+
+            if n == f {
+                factors.push((f, Integer::one()));
+                break;
+            }
+
+            let factor_len = factors.len();
+            f.factor_into(factors);
+
+            fac_count = Integer::zero();
+            loop {
+                let (q, r) = n.quot_rem(&f);
+                if !r.is_zero() {
+                    break;
+                }
+
+                fac_count += 1;
+                n = q;
+            }
+
+            for x in &mut factors[factor_len..] {
+                x.1 *= &fac_count;
+            }
+        }
+    }
+
+    /// Factor the integer, returning a sorted vector of `(factor, exponent)` pairs.
+    pub fn factor(&self) -> Vec<(Integer, Integer)> {
+        let mut factors = vec![];
+        self.factor_into(&mut factors);
+
+        factors.sort_unstable();
+
+        let mut merged = 0;
+        for i in 0..factors.len() {
+            if merged > 0 && factors[merged - 1].0 == factors[i].0 {
+                let exponent = factors[i].1.clone();
+                factors[merged - 1].1 += exponent;
+            } else {
+                if merged != i {
+                    factors[merged] = factors[i].clone();
+                }
+                merged += 1;
+            }
+        }
+        factors.truncate(merged);
+
+        factors
+    }
+
+    /// Compute the Euler totient function.
+    pub fn totient(&self) -> Integer {
+        if self.is_prime(24) {
+            return self.clone() - 1;
+        }
+
+        let factors = self.factor();
+
+        let mut t = self.clone();
+        for (f, _) in factors {
+            t = &t - &t / f;
+        }
+
+        t
+    }
+
     /// Compute `n` factorial (`n!`).
     pub fn factorial(n: u32) -> Integer {
         if n <= 20 {
@@ -844,6 +949,90 @@ impl Integer {
         mcr
     }
 
+    /// Compute the truncated `e`-th root of this integer.
+    pub fn root(&self, e: u32) -> Integer {
+        if e == 0 {
+            panic!("Non-positive root is undefined");
+        }
+        if self.is_negative() {
+            panic!("Root of negative integer is not an integer");
+        }
+        if e == 1 || self <= &Integer::one() {
+            return self.clone();
+        }
+
+        if let Integer::Large(n) = self {
+            return n.root_ref(e).complete().into();
+        }
+
+        match self {
+            Integer::Single(n) => {
+                // Initial guess overestimates to ensure monotonic sequence decrementing
+                let mut r = 1u64 << (n.ilog2() / e + 1);
+                let k = e as u64;
+                loop {
+                    let div = r
+                        .checked_pow(e - 1)
+                        .map(|p| n.unsigned_abs() / p)
+                        .unwrap_or(0);
+                    let r_new = ((k - 1) * r + div) / k; // Newton iteration
+
+                    if r_new >= r {
+                        return r.into();
+                    }
+                    r = r_new;
+                }
+            }
+            Integer::Double(n) => {
+                let mut r = 1u128 << (n.ilog2() / e + 1);
+                let k = e as u128;
+                loop {
+                    let div = r
+                        .checked_pow(e - 1)
+                        .map(|p| n.unsigned_abs() / p)
+                        .unwrap_or(0);
+                    let r_new = ((k - 1) * r + div) / k;
+
+                    if r_new >= r {
+                        return r.into();
+                    }
+                    r = r_new;
+                }
+            }
+            Integer::Large(n) => n.root_ref(e).complete().into(),
+        }
+    }
+
+    /// Test if `self` is a prime number using the Miller-Rabin primality test.
+    /// If the test passes `k` times, `self` is prime with a probability of `1-4^(-k)`.
+    /// If the test fails, `self` is proven composite.
+    ///
+    /// For 64-bit numbers, the test is deterministic and `k` is ignored.
+    pub fn is_prime(&self, k: usize) -> bool {
+        if *self < u64::MAX {
+            Zp64::new(self.to_u64().unwrap()).is_prime_field(k)
+        } else {
+            FiniteField::<Integer>::new(self.clone()).is_prime_field(k)
+        }
+    }
+
+    /// Raise `self` to the power of `e`, using binary exponentiation.
+    pub fn pow_i(&self, mut e: Integer) -> Integer {
+        let mut x = self.clone();
+        let mut y = Integer::one();
+        while e != 1 {
+            if &e % 2 == 1 {
+                y *= &x;
+            }
+
+            x = &x * &x;
+            e /= 2;
+        }
+
+        x * y
+    }
+
+    /// Raise `self` to the power of `e`.
     pub fn pow(&self, e: u64) -> Integer {
         if e > u32::MAX as u64 {
             panic!("Power of exponentiation is larger than 2^32: {e}");
@@ -2892,7 +3081,10 @@ pub fn gcd_signed_i128(mut a: i128, mut b: i128) -> u128 {
 
 #[cfg(test)]
 mod test {
-    use std::ops::{Add, Div, Mul, Rem, Sub};
+    use std::{
+        ops::{Add, Div, Mul, Rem, Sub},
+        str::FromStr,
+    };
 
     use rug::Complete;
 
@@ -2981,6 +3173,34 @@ mod test {
             ),
             rem
         );
+    }
+
+    #[test]
+    fn factor() {
+        let mut start = Integer::from_str("180234718923712803489014621").unwrap();
+
+        for _ in 0..40 {
+            let factors = start.factor();
+
+            let mut res = Integer::one();
+            for (base, exp) in factors {
+                res *= base.pow_i(exp);
+            }
+
+            assert_eq!(res, start);
+            start += 1;
+        }
+    }
+
+    #[test]
+    fn integer_roots() {
+        assert_eq!(Integer::from(0).root(7), 0);
+        assert_eq!(Integer::from(2).root(2), 1);
+        assert_eq!(Integer::from(81).root(4), 3);
+
+        let base = Integer::from(123456789i64);
+        let exact = base.pow(5);
+        assert_eq!(exact.root(5), base);
     }
 
     #[test]
