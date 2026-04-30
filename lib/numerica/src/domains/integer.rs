@@ -3,7 +3,10 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Error, Formatter},
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign},
+    ops::{
+        Add, AddAssign, BitAnd, BitAndAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Shl,
+        ShlAssign, Shr, ShrAssign, Sub, SubAssign,
+    },
     str::FromStr,
 };
 
@@ -20,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    EuclideanDomain, InternalOrdering, Ring, SelfRing,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Z2, Zp,
         Zp64,
@@ -679,6 +682,56 @@ impl Integer {
             _ => {}
         }
         self
+    }
+
+    #[inline]
+    fn shl_usize(&self, rhs: usize) -> Integer {
+        match self {
+            Integer::Single(n) => {
+                if rhs < i64::BITS as usize
+                    && let Some(n) = n.checked_shl(rhs as u32)
+                {
+                    Integer::Single(n)
+                } else if rhs < i128::BITS as usize
+                    && let Some(n) = (*n as i128).checked_shl(rhs as u32)
+                {
+                    Integer::from_double(n)
+                } else {
+                    Integer::from(MultiPrecisionInteger::from(*n) << rhs)
+                }
+            }
+            Integer::Double(n) => {
+                if rhs < i128::BITS as usize
+                    && let Some(n) = n.checked_shl(rhs as u32)
+                {
+                    Integer::from_double(n)
+                } else {
+                    Integer::from(MultiPrecisionInteger::from(*n) << rhs)
+                }
+            }
+            Integer::Large(n) => Integer::from((n << rhs).complete()),
+        }
+    }
+
+    #[inline]
+    fn shr_usize(&self, rhs: usize) -> Integer {
+        match self {
+            Integer::Single(n) => {
+                if rhs < i64::BITS as usize {
+                    Integer::Single(n >> rhs)
+                } else {
+                    Integer::from(MultiPrecisionInteger::from(*n) >> rhs)
+                }
+            }
+            Integer::Double(n) => {
+                if rhs < i128::BITS as usize {
+                    Integer::from_double(n >> rhs)
+                } else {
+                    Integer::from(MultiPrecisionInteger::from(*n) >> rhs)
+                }
+            }
+            Integer::Large(n) => Integer::from((n >> rhs).complete()),
+        }
     }
 
     #[inline]
@@ -2592,6 +2645,170 @@ impl<'a> DivAssign<&'a Integer> for Integer {
     }
 }
 
+macro_rules! shift_integer {
+    ($base: ty) => {
+        impl Shl<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn shl(self, rhs: $base) -> Integer {
+                (&self).shl(rhs)
+            }
+        }
+
+        impl Shl<$base> for &Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn shl(self, rhs: $base) -> Integer {
+                self.shl_usize(usize::try_from(rhs).expect("Shift amount does not fit in usize"))
+            }
+        }
+
+        impl ShlAssign<$base> for Integer {
+            #[inline(always)]
+            fn shl_assign(&mut self, rhs: $base) {
+                *self = (&*self).shl(rhs);
+            }
+        }
+
+        impl Shr<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn shr(self, rhs: $base) -> Integer {
+                (&self).shr(rhs)
+            }
+        }
+
+        impl Shr<$base> for &Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn shr(self, rhs: $base) -> Integer {
+                self.shr_usize(usize::try_from(rhs).expect("Shift amount does not fit in usize"))
+            }
+        }
+
+        impl ShrAssign<$base> for Integer {
+            #[inline(always)]
+            fn shr_assign(&mut self, rhs: $base) {
+                *self = (&*self).shr(rhs);
+            }
+        }
+    };
+}
+
+shift_integer!(u8);
+shift_integer!(u16);
+shift_integer!(u32);
+shift_integer!(u64);
+shift_integer!(u128);
+shift_integer!(usize);
+
+impl<'b> BitAnd<&'b Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn bitand(self, rhs: &'b Integer) -> Integer {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Single(r) => Integer::from(l & *r),
+                Integer::Double(r) => Integer::from(l & *r),
+                Integer::Large(r) => Integer::from(l & r),
+            }
+        } else {
+            &self & rhs
+        }
+    }
+}
+
+impl BitAnd<Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Integer) -> Integer {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Single(r) => Integer::from(l & r),
+                Integer::Double(r) => Integer::from(l & r),
+                Integer::Large(r) => Integer::from(l & r),
+            }
+        } else if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Single(l) => Integer::from(r & l),
+                Integer::Double(l) => Integer::from(r & l),
+                Integer::Large(l) => Integer::from(l & r),
+            }
+        } else {
+            &self & &rhs
+        }
+    }
+}
+
+impl BitAnd<Integer> for &Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Integer) -> Integer {
+        rhs & self
+    }
+}
+
+impl<'b> BitAnd<&'b Integer> for &Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn bitand(self, rhs: &'b Integer) -> Integer {
+        match (self, rhs) {
+            (Integer::Single(l), Integer::Single(r)) => Integer::Single(l & r),
+            (Integer::Single(l), Integer::Double(r)) | (Integer::Double(r), Integer::Single(l)) => {
+                Integer::from_double((*l as i128) & *r)
+            }
+            (Integer::Double(l), Integer::Double(r)) => Integer::from_double(l & r),
+            (Integer::Single(l), Integer::Large(r)) | (Integer::Large(r), Integer::Single(l)) => {
+                Integer::from((r & *l).complete())
+            }
+            (Integer::Double(l), Integer::Large(r)) | (Integer::Large(r), Integer::Double(l)) => {
+                Integer::from((r & *l).complete())
+            }
+            (Integer::Large(l), Integer::Large(r)) => Integer::from((l & r).complete()),
+        }
+    }
+}
+
+impl BitAndAssign<Integer> for Integer {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Single(r) => l.bitand_assign(r),
+                Integer::Double(r) => l.bitand_assign(r),
+                Integer::Large(r) => l.bitand_assign(r),
+            }
+            self.simplify();
+        } else {
+            *self = &*self & rhs;
+        }
+    }
+}
+
+impl<'a> BitAndAssign<&'a Integer> for Integer {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: &'a Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Single(r) => l.bitand_assign(*r),
+                Integer::Double(r) => l.bitand_assign(*r),
+                Integer::Large(r) => l.bitand_assign(r),
+            }
+            self.simplify();
+        } else {
+            *self = &*self & rhs;
+        }
+    }
+}
+
 impl Neg for Integer {
     type Output = Integer;
 
@@ -3201,6 +3418,43 @@ mod test {
         let base = Integer::from(123456789i64);
         let exact = base.pow(5);
         assert_eq!(exact.root(5), base);
+    }
+
+    #[test]
+    fn integer_shifts() {
+        assert_eq!(Integer::from(3) << 4u32, Integer::from(48));
+        assert_eq!(&Integer::from(-9) >> 1usize, Integer::from(-5));
+
+        let promoted = Integer::from(1) << 100u32;
+        assert_eq!(promoted, Integer::from(1u128 << 100));
+
+        let large = Integer::from(1) << 200u32;
+        assert_eq!(&large >> 200u32, Integer::one());
+
+        let mut assigned = Integer::from(7);
+        assigned <<= 130u32;
+        assigned >>= 130u32;
+        assert_eq!(assigned, Integer::from(7));
+    }
+
+    #[test]
+    fn integer_bitand() {
+        assert_eq!(
+            Integer::from(0b1101) & Integer::from(0b1011),
+            Integer::from(0b1001)
+        );
+        assert_eq!(
+            &Integer::from(-1) & &Integer::from(0xff),
+            Integer::from(0xff)
+        );
+
+        let large = (Integer::one() << 200u32) + Integer::from(0b1011);
+        let mask = (Integer::one() << 128u32) - Integer::one();
+        assert_eq!(&large & &mask, Integer::from(0b1011));
+
+        let mut assigned = large;
+        assigned &= mask;
+        assert_eq!(assigned, Integer::from(0b1011));
     }
 
     #[test]
