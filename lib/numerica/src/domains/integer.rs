@@ -25,8 +25,8 @@ use crate::{
 use super::{
     EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Z2, Zp,
-        Zp64,
+        FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, Mersenne64,
+        PrimeIteratorU64, ToFiniteField, Two, Z2, Zp, Zp64,
     },
     float::{FloatField, FloatLike, Real, RealLike, SingleFloat},
     rational::Rational,
@@ -73,6 +73,12 @@ pub enum Integer {
     Double(i128),
     /// Multi-precision integer (using the `rug` crate).
     Large(MultiPrecisionInteger),
+}
+
+#[derive(Clone)]
+struct EcmMontgomeryPoint {
+    x: FiniteFieldElement<MultiPrecisionInteger>,
+    z: FiniteFieldElement<MultiPrecisionInteger>,
 }
 
 impl InternalOrdering for Integer {
@@ -853,8 +859,14 @@ impl Integer {
             return self.clone();
         }
 
-        if self % 2 == 0 {
-            return 2.into();
+        for i in [2, 3, 5, 7, 11, 13, 17, 19, 23] {
+            if self % i == 0 {
+                return i.into();
+            }
+        }
+
+        if let Some(f) = self.ecm_factor(50, 10_000, 1_000_000) {
+            return f;
         }
 
         if let Some(c) = self.to_u64() {
@@ -862,6 +874,298 @@ impl Integer {
         } else {
             FiniteField::<Integer>::new(self.clone()).pollard_brent_rho()
         }
+    }
+
+    fn ecm_montgomery_double(
+        p: &EcmMontgomeryPoint,
+        a24: &FiniteFieldElement<MultiPrecisionInteger>,
+        field: &FiniteField<MultiPrecisionInteger>,
+    ) -> EcmMontgomeryPoint {
+        let x_plus_z = field.add(&p.x, &p.z);
+        let x_minus_z = field.sub(&p.x, &p.z);
+        let u = field.mul(&x_plus_z, &x_plus_z);
+        let v = field.mul(&x_minus_z, &x_minus_z);
+        let diff = field.sub(&u, &v);
+
+        EcmMontgomeryPoint {
+            x: field.mul(&u, &v),
+            z: field.mul(&diff, &field.add(&v, &field.mul(a24, &diff))),
+        }
+    }
+
+    fn ecm_montgomery_add(
+        p: &EcmMontgomeryPoint,
+        q: &EcmMontgomeryPoint,
+        diff: &EcmMontgomeryPoint,
+        field: &FiniteField<MultiPrecisionInteger>,
+    ) -> EcmMontgomeryPoint {
+        let u = field.mul(&field.sub(&p.x, &p.z), &field.add(&q.x, &q.z));
+        let v = field.mul(&field.add(&p.x, &p.z), &field.sub(&q.x, &q.z));
+        let add = field.add(&u, &v);
+        let sub = field.sub(&u, &v);
+
+        EcmMontgomeryPoint {
+            x: field.mul(&diff.z, &field.mul(&add, &add)),
+            z: field.mul(&diff.x, &field.mul(&sub, &sub)),
+        }
+    }
+
+    fn ecm_montgomery_mul(
+        p: &EcmMontgomeryPoint,
+        k: u64,
+        a24: &FiniteFieldElement<MultiPrecisionInteger>,
+        field: &FiniteField<MultiPrecisionInteger>,
+    ) -> EcmMontgomeryPoint {
+        if k == 0 {
+            return EcmMontgomeryPoint {
+                x: field.one(),
+                z: field.zero(),
+            };
+        }
+
+        if k == 1 {
+            return p.clone();
+        }
+
+        let mut r0 = p.clone();
+        let mut r1 = Self::ecm_montgomery_double(p, a24, field);
+
+        let bit = 63 - k.leading_zeros();
+        for i in (0..bit).rev() {
+            if (k >> i) & 1 == 0 {
+                r1 = Self::ecm_montgomery_add(&r0, &r1, p, field);
+                r0 = Self::ecm_montgomery_double(&r0, a24, field);
+            } else {
+                r0 = Self::ecm_montgomery_add(&r0, &r1, p, field);
+                r1 = Self::ecm_montgomery_double(&r1, a24, field);
+            }
+        }
+
+        r0
+    }
+
+    fn ecm_montgomery_stage2(
+        q: &EcmMontgomeryPoint,
+        primes: &[u64],
+        stage1_bound: u64,
+        stage2_bound: u64,
+        a24: &FiniteFieldElement<MultiPrecisionInteger>,
+        field: &FiniteField<MultiPrecisionInteger>,
+        n: &Integer,
+    ) -> Option<Integer> {
+        let d = Self::ecm_montgomery_stage2_window(stage1_bound, stage2_bound)?;
+        let q2 = Self::ecm_montgomery_double(q, a24, field);
+
+        let mut baby = Vec::with_capacity(d as usize);
+        let mut beta = Vec::with_capacity(d as usize);
+        baby.push(q.clone());
+        beta.push(field.mul(&q.x, &q.z));
+
+        if d > 1 {
+            baby.push(Self::ecm_montgomery_add(&q2, q, q, field));
+            beta.push(field.mul(&baby[1].x, &baby[1].z));
+        }
+
+        for i in 2..d as usize {
+            baby.push(Self::ecm_montgomery_add(
+                &baby[i - 1],
+                &q2,
+                &baby[i - 2],
+                field,
+            ));
+            beta.push(field.mul(&baby[i].x, &baby[i].z));
+        }
+
+        let step = Self::ecm_montgomery_mul(q, 4 * d, a24, field);
+        let mut previous = Self::ecm_montgomery_mul(q, stage1_bound - 2 * d, a24, field);
+        let mut giant = Self::ecm_montgomery_mul(q, stage1_bound + 2 * d, a24, field);
+        let mut prime_index = primes.partition_point(|p| *p < stage1_bound);
+        let mut product = field.one();
+        let step_width = usize::try_from(4 * d).ok()?;
+
+        for center in ((stage1_bound + 2 * d)..(stage2_bound + 2 * d)).step_by(step_width) {
+            let window_end = center + 2 * d;
+            let block_prime_start = prime_index;
+            let alpha = field.mul(&giant.x, &giant.z);
+
+            while prime_index < primes.len() && primes[prime_index] < window_end {
+                let prime = primes[prime_index];
+                if prime > stage1_bound {
+                    let delta = prime.abs_diff(center) >> 1;
+                    if delta < d {
+                        let delta = delta as usize;
+                        let f = field.add(
+                            &field.sub(
+                                &field.mul(
+                                    &field.sub(&giant.x, &baby[delta].x),
+                                    &field.add(&giant.z, &baby[delta].z),
+                                ),
+                                &alpha,
+                            ),
+                            &beta[delta],
+                        );
+                        field.mul_assign(&mut product, &f);
+                    }
+                }
+
+                prime_index += 1;
+            }
+
+            let g = field.to_integer(&product).gcd(n);
+            if g > 1 && g < *n {
+                return Some(g);
+            }
+            if g == *n {
+                for prime in &primes[block_prime_start..prime_index] {
+                    if *prime > stage1_bound {
+                        let delta = prime.abs_diff(center) >> 1;
+                        if delta < d {
+                            let delta = delta as usize;
+                            let f = field.add(
+                                &field.sub(
+                                    &field.mul(
+                                        &field.sub(&giant.x, &baby[delta].x),
+                                        &field.add(&giant.z, &baby[delta].z),
+                                    ),
+                                    &alpha,
+                                ),
+                                &beta[delta],
+                            );
+                            let g = field.to_integer(&f).gcd(n);
+                            if g > 1 && g < *n {
+                                return Some(g);
+                            }
+                        }
+                    }
+                }
+                return None;
+            }
+
+            let next = Self::ecm_montgomery_add(&giant, &step, &previous, field);
+            previous = giant;
+            giant = next;
+        }
+
+        None
+    }
+
+    fn ecm_montgomery_stage2_window(stage1_bound: u64, stage2_bound: u64) -> Option<u64> {
+        if stage2_bound <= stage1_bound || stage1_bound < 6 {
+            return None;
+        }
+
+        let sqrt_b2 = (stage2_bound as f64).sqrt() as u64;
+        Some(sqrt_b2.min(stage1_bound / 2 - 1).max(1))
+    }
+
+    fn ecm_montgomery_curve(
+        sigma: Integer,
+        field: &FiniteField<MultiPrecisionInteger>,
+        n: &Integer,
+    ) -> Result<(EcmMontgomeryPoint, FiniteFieldElement<MultiPrecisionInteger>), Integer> {
+        let sigma = field.to_element(sigma.to_multi_prec());
+        let u = field.sub(
+            &field.mul(&sigma, &sigma),
+            &field.to_element(MultiPrecisionInteger::from(5)),
+        );
+        let v = field.mul(&field.to_element(MultiPrecisionInteger::from(4)), &sigma);
+        let u3 = field.mul(&u, &field.mul(&u, &u));
+        let v3 = field.mul(&v, &field.mul(&v, &v));
+
+        let v_minus_u = field.sub(&v, &u);
+        let numerator = field.mul(
+            &field.mul(&v_minus_u, &field.mul(&v_minus_u, &v_minus_u)),
+            &field.add(
+                &field.mul(&field.to_element(MultiPrecisionInteger::from(3)), &u),
+                &v,
+            ),
+        );
+        let denominator = field.mul(
+            &field.to_element(MultiPrecisionInteger::from(16)),
+            &field.mul(&u3, &v),
+        );
+        let g = field.to_integer(&denominator).gcd(n);
+        if g > 1 {
+            return Err(g);
+        }
+
+        Ok((
+            EcmMontgomeryPoint { x: u3, z: v3 },
+            field.mul(&numerator, &field.inv(&denominator)),
+        ))
+    }
+
+    /// Try to find a nontrivial factor using Lenstra ECM with Montgomery stage 1 and stage 2.
+    pub fn ecm_factor(
+        &self,
+        curves: usize,
+        stage1_bound: u64,
+        stage2_bound: u64,
+    ) -> Option<Integer> {
+        if self <= &Integer::from(3) || self.is_prime(24) {
+            return None;
+        }
+
+        if self % 2 == 0 {
+            return Some(Integer::from(2));
+        }
+
+        let field = FiniteField::<MultiPrecisionInteger>::new(self.clone().to_multi_prec());
+        let stage2_prime_bound =
+            if let Some(d) = Self::ecm_montgomery_stage2_window(stage1_bound, stage2_bound) {
+                stage2_bound + 2 * d
+            } else {
+                stage2_bound
+            };
+        let mut primes = vec![2];
+        primes.extend(PrimeIteratorU64::new(2).take_while(|p| *p <= stage2_prime_bound));
+        let mut stage1_primes = vec![2];
+        stage1_primes.extend(PrimeIteratorU64::new(2).take_while(|p| *p <= stage1_bound));
+
+        for curve in 0..curves {
+            let sigma = Integer::from(curve as u64 + 6);
+            let (mut point, a24) = match Self::ecm_montgomery_curve(sigma, &field, self) {
+                Ok(curve) => curve,
+                Err(g) if g > 1 && g < *self => return Some(g),
+                Err(_) => continue,
+            };
+
+            let mut failed_curve = false;
+            for p in &stage1_primes {
+                let mut q = *p;
+                while q <= stage1_bound / *p {
+                    q *= *p;
+                }
+
+                point = Self::ecm_montgomery_mul(&point, q, &a24, &field);
+                let g = field.to_integer(&point.z).gcd(self);
+                if g > 1 && g < *self {
+                    return Some(g);
+                }
+                if g == *self {
+                    failed_curve = true;
+                    break;
+                }
+            }
+
+            if failed_curve {
+                continue;
+            }
+
+            if let Some(g) = Self::ecm_montgomery_stage2(
+                &point,
+                &primes,
+                stage1_bound,
+                stage2_bound,
+                &a24,
+                &field,
+                self,
+            ) {
+                return Some(g);
+            }
+        }
+
+        None
     }
 
     /// Factor the integer, yielding unsorted and unmerged `(factor, exponent)` pairs in `factors`.
@@ -1062,6 +1366,15 @@ impl Integer {
     ///
     /// For 64-bit numbers, the test is deterministic and `k` is ignored.
     pub fn is_prime(&self, k: usize) -> bool {
+        if self <= &Integer::one() {
+            return false;
+        }
+        if self == &Integer::from(2) {
+            return true;
+        }
+        if self % 2 == 0 {
+            return false;
+        }
         if *self < u64::MAX {
             Zp64::new(self.to_u64().unwrap()).is_prime_field(k)
         } else {
@@ -3407,6 +3720,14 @@ mod test {
             assert_eq!(res, start);
             start += 1;
         }
+    }
+
+    #[test]
+    fn ecm_factor() {
+        let n = Integer::from_str("114479981755147433175506682142130410682442983").unwrap();
+        let factor = n.ecm_factor(50, 10_000, 1_000_000).unwrap();
+        assert!(factor > 1 && factor < n);
+        assert_eq!(n % factor, Integer::zero());
     }
 
     #[test]
