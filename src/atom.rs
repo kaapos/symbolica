@@ -3652,7 +3652,12 @@ macro_rules! try_parse {
             $crate::parser::ParseSettings::mathematica(),
         )
     }};
-    ($s: expr, settings = $settings: expr, default_namespace = $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!($s, $ns), $settings) }};
+    ($s: expr, settings = $settings: expr, default_namespace = $ns: expr) => {{
+        $crate::atom::Atom::parse_with_default_namespace(
+            $crate::with_default_namespace!($s, $ns),
+            $settings,
+        )
+    }};
 }
 
 /// Parse an atom from literal code. Use [parse!](crate::parse) to parse from a string.
