@@ -207,7 +207,10 @@ pub const fn get_single_derivative_index<const N: usize, const C: usize>(
     None
 }
 
-const fn is_single_derivative_component<const N: usize>(component: &[usize; N], var: usize) -> bool {
+const fn is_single_derivative_component<const N: usize>(
+    component: &[usize; N],
+    var: usize,
+) -> bool {
     let mut i = 0;
     while i < N {
         let expected = if i == var { 1 } else { 0 };
@@ -394,7 +397,9 @@ macro_rules! create_hyperdual_from_components {
 
             fn single_derivative_index(var: usize) -> usize {
                 $crate::domains::dual::get_single_derivative_index(&Self::SHAPE, var)
-                    .unwrap_or_else(|| panic!("No single derivative component for variable {}", var))
+                    .unwrap_or_else(|| {
+                        panic!("No single derivative component for variable {}", var)
+                    })
             }
         }
 
@@ -1252,7 +1257,7 @@ pub struct HyperDual<T> {
 
 impl<T> HyperDual<T> {
     /// Create a new dual with a given shape. If you already have a dual with the same shape,
-    /// consider using methods such as [Dual::variable] to inherit the shape and floating point settings.
+    /// consider using methods such as [HyperDual::variable] to inherit the shape and floating point settings.
     pub fn from_values(shape: Vec<Vec<usize>>, values: Vec<T>) -> Self {
         if shape.is_empty() {
             panic!("Shape must contain at least one component");
@@ -1325,7 +1330,7 @@ impl<T> HyperDual<T> {
 
 impl<T: Default> HyperDual<T> {
     /// Create a new dual with a given shape. If you already have a dual with the same shape,
-    /// consider using methods such as [Dual::variable] to inherit the shape and floating point settings.
+    /// consider using methods such as [HyperDual::variable] to inherit the shape and floating point settings.
     pub fn new(shape: Vec<Vec<usize>>) -> Self {
         let values = (0..shape.len()).map(|_| T::default()).collect();
         Self::from_values(shape, values)
