@@ -1,5 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
+mod cpp;
+
 use crate::{
     atom::{Atom, AtomCore, AtomOrView, AtomView, EvaluationInfo, FunctionBuilder, Symbol},
     coefficient::{Coefficient, CoefficientView},
@@ -352,6 +354,7 @@ impl SpecialSymbols {
                 )
                 .with_evaluation_info(
                     EvaluationInfo::new()
+                    .with_cpp(cpp::unary("gamma", "tgamma", "x", false))
                     .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, gamma_numeric_eval)
                     })
@@ -633,6 +636,7 @@ impl SpecialSymbols {
                 })
                 .with_evaluation_info(
                     EvaluationInfo::new()
+                    .with_cpp(cpp::unary("zeta", "riemann_zeta", "x", false))
                     .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, zeta_numeric_eval)
                     })
@@ -679,6 +683,7 @@ impl SpecialSymbols {
                 })
                 .with_evaluation_info(
                     EvaluationInfo::new()
+                    .with_cpp(cpp::unary("erf", "erf", "x", false))
                     .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, erf_numeric_eval)
                     })
@@ -828,7 +833,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, -&delta / function!(tan, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("tan", "tan", "x", false))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.tan())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.tan()))
@@ -870,7 +877,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, &delta / function!(tan, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("cot", "tan", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.tan().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.tan().inv()))
@@ -913,7 +922,9 @@ impl GeometricSymbols {
                     ))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("sec", "cos", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.cos().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.cos().inv()))
@@ -956,7 +967,9 @@ impl GeometricSymbols {
                     ))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("csc", "sin", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.sin().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.sin().inv()))
@@ -988,7 +1001,9 @@ impl GeometricSymbols {
                     }
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("sinh", "sinh", "x", false))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.sinh())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.sinh()))
@@ -1020,7 +1035,9 @@ impl GeometricSymbols {
                     }
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("cosh", "cosh", "x", false))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.cosh())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.cosh()))
@@ -1062,7 +1079,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, &delta / function!(tanh, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("tanh", "tanh", "x", false))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.tanh())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.tanh()))
@@ -1104,7 +1123,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, &delta / function!(tanh, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("coth", "tanh", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.tanh().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.tanh().inv()))
@@ -1145,7 +1166,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, residue * &delta / function!(sinh, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("sech", "cosh", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.cosh().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.cosh().inv()))
@@ -1186,7 +1209,9 @@ impl GeometricSymbols {
                     Some((Atom::num(1) / &delta, residue * &delta / function!(sinh, delta)))
                 })
                 .with_evaluation_info(
-                    EvaluationInfo::new().register(|args: &[Complex<Float>]| {
+                    EvaluationInfo::new()
+                    .with_cpp(cpp::unary("csch", "sinh", "x", true))
+                    .register(|args: &[Complex<Float>]| {
                         unary_eval_complex_float(args, |z, _| z.sinh().inv())
                     })
                     .register(|args: &[Float]| unary_eval_real(args, |x| x.sinh().inv()))
@@ -1234,6 +1259,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("asin", "asin", "x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.asin())
                 })
@@ -1271,6 +1297,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acos", "acos", "x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.acos())
                 })
@@ -1322,6 +1349,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::atan())
                 .register(|args: &[Complex<Float>]| match args {
                     [z] => atan_numeric_eval(z, z.re.prec().max(z.im.prec())),
                     [x, y] => atan2_numeric_eval(
@@ -1373,6 +1401,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acot", "atan", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, prec| atan_numeric_eval(&z.inv(), prec))
                 })
@@ -1422,6 +1451,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("asec", "acos", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.inv().acos())
                 })
@@ -1456,6 +1486,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acsc", "asin", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.inv().asin())
                 })
@@ -1493,6 +1524,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("asinh", "asinh", "x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.asinh())
                 })
@@ -1531,6 +1563,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acosh", "acosh", "x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.acosh())
                 })
@@ -1567,6 +1600,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("atanh", "atanh", "x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.atanh())
                 })
@@ -1599,6 +1633,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acoth", "atanh", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.inv().atanh())
                 })
@@ -1639,6 +1674,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("asech", "acosh", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.inv().acosh())
                 })
@@ -1674,6 +1710,7 @@ impl GeometricSymbols {
                 }
             },
             eval = EvaluationInfo::new()
+                .with_cpp(cpp::unary("acsch", "asinh", "T(1) / x", false))
                 .register(|args: &[Complex<Float>]| {
                     unary_eval_complex_float(args, |z, _| z.inv().asinh())
                 })
@@ -1749,6 +1786,7 @@ impl BesselSymbols {
             },
             eval = EvaluationInfo::new()
                 .with_tags(1)
+                .with_cpp_generator(|name, tags| cpp::bessel("cyl_bessel_j", name, tags))
                 .register_tagged(|tags| {
                     let tags = tags.iter().map(|x| x.to_owned()).collect::<Vec<_>>();
                     Box::new(move |args: &[Complex<Float>]| {
@@ -1818,6 +1856,7 @@ impl BesselSymbols {
             },
             eval = EvaluationInfo::new()
                 .with_tags(1)
+                .with_cpp_generator(|name, tags| cpp::bessel("cyl_neumann", name, tags))
                 .register_tagged(|tags| {
                     let tags = tags.iter().map(|x| x.to_owned()).collect::<Vec<_>>();
                     Box::new(move |args: &[Complex<Float>]| {
@@ -1894,6 +1933,7 @@ impl BesselSymbols {
             },
             eval = EvaluationInfo::new()
                 .with_tags(1)
+                .with_cpp_generator(|name, tags| cpp::bessel("cyl_bessel_i", name, tags))
                 .register_tagged(|tags| {
                     let tags = tags.iter().map(|x| x.to_owned()).collect::<Vec<_>>();
                     Box::new(move |args: &[Complex<Float>]| {
@@ -1963,6 +2003,7 @@ impl BesselSymbols {
             },
             eval = EvaluationInfo::new()
                 .with_tags(1)
+                .with_cpp_generator(|name, tags| cpp::bessel("cyl_bessel_k", name, tags))
                 .register_tagged(|tags| {
                     let tags = tags.iter().map(|x| x.to_owned()).collect::<Vec<_>>();
                     Box::new(move |args: &[Complex<Float>]| {
@@ -2736,9 +2777,11 @@ fn bessel_y_numeric_eval(
         return Some(if n % 2 == 0 { value } else { -value });
     }
 
-    let order = bessel_regularized_order(order, binary_prec);
+    if complex_float_to_integer(order).is_some() {
+        return bessel_integer_order_limit(order, z, binary_prec, bessel_y_numeric_eval);
+    }
     let pi_order = complex_pi(binary_prec) * order.clone();
-    let j_pos = bessel_j_numeric_eval(&order, z, binary_prec)?;
+    let j_pos = bessel_j_numeric_eval(order, z, binary_prec)?;
     let j_neg = bessel_j_numeric_eval(&(-order.clone()), z, binary_prec)?;
     Some((j_pos * pi_order.clone().cos() - j_neg) / pi_order.sin())
 }
@@ -2755,18 +2798,16 @@ fn bessel_k_numeric_eval(
         ));
     }
 
-    let order = if let Some(n) = complex_float_to_integer(order) {
-        Complex::new(
+    if let Some(n) = complex_float_to_integer(order) {
+        let order = Complex::new(
             Float::with_val(binary_prec, n.abs()),
             Float::new(binary_prec),
-        )
-    } else {
-        order.clone()
-    };
-    let order = bessel_regularized_order(&order, binary_prec);
+        );
+        return bessel_integer_order_limit(&order, z, binary_prec, bessel_k_numeric_eval);
+    }
     let pi_order = complex_pi(binary_prec) * order.clone();
     let i_neg = bessel_i_numeric_eval(&(-order.clone()), z, binary_prec)?;
-    let i_pos = bessel_i_numeric_eval(&order, z, binary_prec)?;
+    let i_pos = bessel_i_numeric_eval(order, z, binary_prec)?;
     let pref = Complex::new(
         Float::with_val(binary_prec, Constant::Pi) / Float::with_val(binary_prec, 2),
         Float::new(binary_prec),
@@ -2787,7 +2828,7 @@ fn bessel_series_eval(
     let mut term = z_half.clone().powf(order) / gamma;
     let mut sum = term.clone();
     let z_half_sq = z_half.clone() * z_half;
-    let threshold = 2f64.powi(-(binary_prec.min(900) as i32));
+    let threshold = Float::with_val(binary_prec, 0.5).pow(u64::from(binary_prec));
 
     for k in 1..(16 * binary_prec.max(16)) {
         let kf = Float::with_val(binary_prec, k);
@@ -2799,9 +2840,9 @@ fn bessel_series_eval(
             z_half_sq.clone()
         };
         term = term * factor / denom;
-        let term_size = term.norm().re.to_f64().abs();
+        let term_size = term.norm().re;
         sum += term.clone();
-        if k > 16 && (term_size == 0.0 || term_size < threshold) {
+        if k > 16 && (term_size.is_zero() || term_size < threshold) {
             return Some(sum);
         }
     }
@@ -2809,21 +2850,29 @@ fn bessel_series_eval(
     Some(sum)
 }
 
-fn bessel_regularized_order(order: &Complex<Float>, binary_prec: u32) -> Complex<Float> {
-    if let Some(n) = complex_float_to_integer(order) {
-        let eps = bessel_order_epsilon(binary_prec);
-        Complex::new(
-            Float::with_val(binary_prec, n) + eps,
-            Float::new(binary_prec),
-        )
-    } else {
-        order.clone()
-    }
-}
-
-fn bessel_order_epsilon(binary_prec: u32) -> Float {
-    let eps = 2f64.powi(-((binary_prec.min(200) as i32) / 3));
-    Float::with_val(binary_prec, eps.max(1e-8))
+fn bessel_integer_order_limit(
+    order: &Complex<Float>,
+    z: &Complex<Float>,
+    binary_prec: u32,
+    evaluator: fn(&Complex<Float>, &Complex<Float>, u32) -> Option<Complex<Float>>,
+) -> Option<Complex<Float>> {
+    // Y and K have a removable 0/0 singularity in their order formulas.
+    // Keep the O(epsilon) perturbation below the requested rounding error,
+    // and supply extra working bits for cancellation both in the Bessel
+    // series near gamma poles and in the numerator of the order formula.
+    let work_prec = binary_prec.saturating_mul(3).saturating_add(96);
+    let epsilon = Float::with_val(work_prec, 0.5).pow(u64::from(binary_prec) + 16);
+    let mut order = order.clone();
+    order.re.set_prec(work_prec);
+    order.im.set_prec(work_prec);
+    order.re += epsilon;
+    let mut z = z.clone();
+    z.re.set_prec(work_prec);
+    z.im.set_prec(work_prec);
+    let mut result = evaluator(&order, &z, work_prec)?;
+    result.re.set_prec(binary_prec);
+    result.im.set_prec(binary_prec);
+    Some(result)
 }
 
 fn complex_pi(prec: u32) -> Complex<Float> {
@@ -2905,18 +2954,14 @@ fn complex_f64_to_float(value: &Complex<f64>, prec: u32) -> Complex<Float> {
 }
 
 fn complex_float_to_integer(value: &Complex<Float>) -> Option<i64> {
-    if value.im.to_f64().abs() > 1e-12 {
+    if !value.im.is_zero() {
         return None;
     }
-    let re = value.re.to_f64();
-    if !re.is_finite() {
+    let re = value.re.try_to_rational()?;
+    if !re.is_integer() {
         return None;
     }
-    let rounded = re.round();
-    if (re - rounded).abs() > 1e-12 || rounded < i64::MIN as f64 || rounded > i64::MAX as f64 {
-        return None;
-    }
-    Some(rounded as i64)
+    re.numerator().to_i64()
 }
 
 fn function_arguments<'a, const N: usize>(view: AtomView<'a>) -> Option<[AtomView<'a>; N]> {
@@ -4798,6 +4843,66 @@ mod tests {
         assert_close_complex(&y, &y_expected, "1e-20");
         assert_close_complex(&i, &i_expected, "1e-20");
         assert_close_complex(&k, &k_expected, "1e-18");
+    }
+
+    #[test]
+    fn bessel_integer_order_limits_preserve_precision() {
+        use super::{
+            bessel_i_numeric_eval, bessel_j_numeric_eval, bessel_k_numeric_eval,
+            bessel_y_numeric_eval, complex_one, complex_pi,
+        };
+
+        for prec in [53, 128, 256, 512] {
+            for imaginary in [0., 0.5] {
+                let z = Complex::new(
+                    Float::with_val(prec, 1.25),
+                    Float::with_val(prec, imaginary),
+                );
+                for n in [0, 1, 2] {
+                    let order = Complex::new(Float::with_val(prec, n), Float::new(prec));
+                    let next = Complex::new(Float::with_val(prec, n + 1), Float::new(prec));
+                    let j = bessel_j_numeric_eval(&order, &z, prec).unwrap();
+                    let j_next = bessel_j_numeric_eval(&next, &z, prec).unwrap();
+                    let y = bessel_y_numeric_eval(&order, &z, prec).unwrap();
+                    let y_next = bessel_y_numeric_eval(&next, &z, prec).unwrap();
+                    let i = bessel_i_numeric_eval(&order, &z, prec).unwrap();
+                    let i_next = bessel_i_numeric_eval(&next, &z, prec).unwrap();
+                    let k = bessel_k_numeric_eval(&order, &z, prec).unwrap();
+                    let k_next = bessel_k_numeric_eval(&next, &z, prec).unwrap();
+
+                    // Independent Wronskian identities exercise both integer
+                    // limits without comparing two perturbed approximations.
+                    let one = complex_one(prec);
+                    let y_residual = j_next * y - j * y_next
+                        - (one.clone() + one.clone()) / (complex_pi(prec) * z.clone());
+                    let k_residual = i * k_next + i_next * k - one / z.clone();
+                    for residual in [y_residual, k_residual] {
+                        assert!(
+                            residual.norm().re.to_f64().abs() < 2f64.powi(-(prec as i32) + 12),
+                            "n={n}, z={z}, precision={prec}: residual {residual}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bessel_order_integer_detection_is_exact() {
+        use super::complex_float_to_integer;
+        use crate::domains::float::FloatLike;
+
+        let one = Float::with_val(128, 1);
+        let epsilon = Float::with_val(128, 0.5).pow(80);
+        assert_eq!(
+            complex_float_to_integer(&Complex::new(one.clone(), Float::new(128))),
+            Some(1)
+        );
+        assert_eq!(
+            complex_float_to_integer(&Complex::new(one.clone() + &epsilon, Float::new(128))),
+            None
+        );
+        assert_eq!(complex_float_to_integer(&Complex::new(one, epsilon)), None);
     }
 
     #[test]
