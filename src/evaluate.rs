@@ -404,6 +404,24 @@ mod test {
         assert_eq!(exported.input_count, 1);
         assert_eq!(exported.output_count, 4);
         assert_eq!(exported.sub_evaluators.len(), 3);
+        assert!(
+            exported
+                .sub_evaluators
+                .iter()
+                .find(|sub| sub.symbol == symbol!("symbolica::sub_eval::large"))
+                .unwrap()
+                .tags
+                .is_empty()
+        );
+        assert_eq!(
+            exported
+                .sub_evaluators
+                .iter()
+                .find(|sub| sub.symbol == symbol!("symbolica::sub_eval::tagged"))
+                .unwrap()
+                .tags,
+            ["1"]
+        );
         assert_eq!(
             execute_exported(&exported, &[2.], exported.output_count),
             [13., 18., 13., 3.]

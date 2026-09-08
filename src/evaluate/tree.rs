@@ -690,18 +690,65 @@ impl<'a> AtomView<'a> {
             .collect::<Vec<_>>();
         captures.sort_by_cached_key(|(parameter, _)| parameter.to_canonical_string());
 
-        let mut sub_params = captures
-            .iter()
-            .map(|(parameter, _)| parameter.clone())
-            .collect::<Vec<_>>();
-        sub_params.extend(arg_spec.iter().map(|arg| arg.as_view().to_owned()));
+        let build_evaluator = |captures: &[(Atom, Slot)]| {
+            let mut sub_params = captures
+                .iter()
+                .map(|(parameter, _)| parameter.clone())
+                .collect::<Vec<_>>();
+            sub_params.extend(arg_spec.iter().map(|arg| arg.as_view().to_owned()));
+            Self::linearize_multiple(
+                std::slice::from_ref(body),
+                fn_map,
+                &sub_params,
+                settings.clone(),
+            )
+        };
 
-        let mut evaluator = Self::linearize_multiple(
-            std::slice::from_ref(body),
-            fn_map,
-            &sub_params,
-            settings.clone(),
-        )?;
+        let mut evaluator = build_evaluator(&captures)?;
+
+        // The body is initially built with every in-scope parameter so lexical captures remain
+        // available. Afterwards, retain only captures that the generated instruction stream
+        // actually reads. Explicit function arguments are never removed, even if the body does
+        // not use them, because they are part of the declared call signature.
+        let mut used_captures = vec![false; captures.len()];
+        let mut mark_used = |index: usize| {
+            if index < used_captures.len() {
+                used_captures[index] = true;
+            }
+        };
+        for (instruction, _) in &evaluator.instructions {
+            match instruction {
+                Instr::Add(_, args) | Instr::Mul(_, args) | Instr::ExternalFun(_, _, args) => {
+                    for &arg in args {
+                        mark_used(arg);
+                    }
+                }
+                Instr::Pow(_, base, _) | Instr::BuiltinFun(_, _, base) => mark_used(*base),
+                Instr::Powf(_, base, exponent) => {
+                    mark_used(*base);
+                    mark_used(*exponent);
+                }
+                Instr::IfElse(condition, _) => mark_used(*condition),
+                Instr::Join(_, condition, if_true, if_false) => {
+                    mark_used(*condition);
+                    mark_used(*if_true);
+                    mark_used(*if_false);
+                }
+                Instr::Goto(_) | Instr::Label(_) => {}
+            }
+        }
+        for &result in &evaluator.result_indices {
+            mark_used(result);
+        }
+
+        if used_captures.iter().any(|used| !used) {
+            captures = captures
+                .into_iter()
+                .zip(used_captures)
+                .filter_map(|(capture, used)| used.then_some(capture))
+                .collect();
+            evaluator = build_evaluator(&captures)?;
+        }
 
         let mut call_args = captures
             .into_iter()

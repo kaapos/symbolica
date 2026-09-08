@@ -101,16 +101,16 @@ mod tests {
     fn python_function_definition_registers_non_inline_evaluator() {
         let function = symbol!("symbolica::python::function_definition");
         let definition = PythonFunctionDefinition::new(
-            function.into(),
+            PolyVariable::try_from(parse!("symbolica::python::function_definition(1)")).unwrap(),
             vec![symbol!("y").into()],
-            parse!("y^2 + 2").into(),
+            parse!("y^2").into(),
             "never",
         )
         .unwrap();
         let mut function_map = FunctionMap::new();
         definition.register(&mut function_map).unwrap();
 
-        let evaluator = parse!("symbolica::python::function_definition(x)")
+        let evaluator = parse!("symbolica::python::function_definition(1, x)")
             .evaluator(&[parse!("x")])
             .function_map(function_map)
             .build()
@@ -121,11 +121,22 @@ mod tests {
             .export_instructions();
         assert_eq!(exported.sub_evaluators.len(), 1);
         assert_eq!(exported.sub_evaluators[0].symbol, function);
+        assert_eq!(exported.sub_evaluators[0].tags, ["1"]);
+        assert!(exported.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::Fun(_, function, _)
+                    if function.0 == exported.sub_evaluators[0].symbol
+                        && function.1 == ["1"]
+                        && function.2.len() == 1
+            )
+        }));
+        assert_eq!(exported.sub_evaluators[0].input_count, 1);
 
         let mut evaluator = evaluator.map_coeff(&|coefficient| coefficient.re.to_f64());
         let mut output = [0.];
         evaluator.evaluate(&[3.], &mut output);
-        assert_eq!(output, [11.]);
+        assert_eq!(output, [9.]);
     }
 }
 
