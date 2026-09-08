@@ -3898,9 +3898,14 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         let monomials = UnsafeCell::new((self.nvars(), monomials));
 
-        /// In order to prevent allocations of the exponents, store them in a single
-        /// append-only vector and use a key to index into it. For performance,
-        /// we use an unsafe cell.
+        // A slot remains immutable while its key is in the heap/cache, or while
+        // the popped monomial is still needed for output. Duplicate candidates
+        // and fully consumed monomials release their slots for the next product.
+        let mut free_monomials = Vec::new();
+
+        /// Exponents live in a slot arena indexed by heap/cache keys. Mutation
+        /// through the unsafe cell is restricted to unreferenced slots and
+        /// appending storage; comparisons never overlap a mutation.
         #[derive(Clone, Copy)]
         struct Key<'a, E: Exponent> {
             index: usize,
@@ -3993,13 +3998,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 if i + 1 < self.nterms() && (j == 0 || merged_index[j - 1] > i + 1) {
                     let m = unsafe {
                         let b = &mut *monomials.get();
-                        let index = b.1.len();
-                        b.1.extend(
-                            self.exponents(i + 1)
-                                .iter()
-                                .zip(rhs.exponents(j))
-                                .map(|(e1, e2)| *e1 + *e2),
-                        );
+                        let index = if let Some(index) = free_monomials.pop() {
+                            for (target, (e1, e2)) in b.1[index..index + b.0]
+                                .iter_mut()
+                                .zip(self.exponents(i + 1).iter().zip(rhs.exponents(j)))
+                            {
+                                *target = *e1 + *e2;
+                            }
+                            index
+                        } else {
+                            let index = b.1.len();
+                            b.1.extend(
+                                self.exponents(i + 1)
+                                    .iter()
+                                    .zip(rhs.exponents(j))
+                                    .map(|(e1, e2)| *e1 + *e2),
+                            );
+                            index
+                        };
 
                         Key {
                             index,
@@ -4009,6 +4025,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
                     if let Some(e) = cache.get_mut(&m) {
                         e.push((i + 1, j));
+                        // The existing key owns its slot; this candidate was
+                        // never inserted and can be overwritten immediately.
+                        free_monomials.push(m.index);
                     } else {
                         h.push(Reverse(m)); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
@@ -4025,13 +4044,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 if j + 1 < rhs.nterms() && !in_heap[j + 1] {
                     let m = unsafe {
                         let b = &mut *monomials.get();
-                        let index = b.1.len();
-                        b.1.extend(
-                            self.exponents(i)
-                                .iter()
-                                .zip(rhs.exponents(j + 1))
-                                .map(|(e1, e2)| *e1 + *e2),
-                        );
+                        let index = if let Some(index) = free_monomials.pop() {
+                            for (target, (e1, e2)) in b.1[index..index + b.0]
+                                .iter_mut()
+                                .zip(self.exponents(i).iter().zip(rhs.exponents(j + 1)))
+                            {
+                                *target = *e1 + *e2;
+                            }
+                            index
+                        } else {
+                            let index = b.1.len();
+                            b.1.extend(
+                                self.exponents(i)
+                                    .iter()
+                                    .zip(rhs.exponents(j + 1))
+                                    .map(|(e1, e2)| *e1 + *e2),
+                            );
+                            index
+                        };
 
                         Key {
                             index,
@@ -4041,6 +4071,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
                     if let Some(e) = cache.get_mut(&m) {
                         e.push((i, j + 1));
+                        // The existing key owns its slot; this candidate was
+                        // never inserted and can be overwritten immediately.
+                        free_monomials.push(m.index);
                     } else {
                         h.push(Reverse(m)); // only add when new
 
@@ -4067,6 +4100,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                         .extend_from_slice(&b.1[cur_mon.0.index..cur_mon.0.index + b.0]);
                 }
             }
+            // cur_mon has left both collections, and its output exponents
+            // have now been copied (or its coefficient canceled to zero).
+            free_monomials.push(cur_mon.0.index);
         }
 
         res
