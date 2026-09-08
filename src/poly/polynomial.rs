@@ -3204,6 +3204,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
 
+        if self.is_constant() {
+            return Ok(MultivariatePolynomial::new(
+                self.ring(),
+                self.nterms().into(),
+                Arc::new(order.to_vec()),
+            )
+            .constant(self.get_constant()));
+        }
+
         let mut new_exp = vec![E::zero(); self.nterms() * order.len()];
         for (e, er) in new_exp.chunks_mut(order.len()).zip(self.exponents_iter()) {
             for x in 0..new_order.len() {
@@ -7007,6 +7016,29 @@ mod test {
         mixed_radix_dense_work_is_bounded, packed_row_merge_is_bounded,
         total_degree_kernel_precedes_mixed_radix, total_degree_rank_table,
     };
+
+    #[test]
+    fn constants_can_grow_and_shrink_variable_maps() {
+        let variables = Arc::new(vec![crate::poly::PolyVariable::from(symbol!("x"))]);
+        for (source, target) in [
+            (None, variables.as_ref().clone()),
+            (Some(variables), Vec::new()),
+            (None, Vec::new()),
+        ] {
+            for expression in ["0", "7", "-7/3"] {
+                let p = parse!(expression).to_polynomial::<_, u16>(&Q, source.clone());
+                let result = p.rearrange_with_growth(&target).unwrap();
+                assert_eq!(result.variables().as_ref(), &target);
+                assert_eq!(result.get_constant(), p.get_constant());
+            }
+        }
+        assert!(
+            parse!("x+1")
+                .to_polynomial::<_, u16>(&Q, None)
+                .rearrange_with_growth(&[])
+                .is_err()
+        );
+    }
 
     #[test]
     fn total_degree_exponent_cursor_matches_fresh_unranking() {
