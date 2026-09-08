@@ -198,8 +198,12 @@ impl<'py> FromPyObject<'_, 'py> for Integer {
         if let Ok(num) = ob.extract::<i64>() {
             Ok(num.into())
         } else if let Ok(num) = ob.cast::<PyInt>() {
-            let a = num.to_string();
-            Ok(Integer::from(a.parse::<MultiPrecisionInteger>().unwrap()))
+            let text = num.str()?;
+            let value = text
+                .extract::<String>()?
+                .parse::<MultiPrecisionInteger>()
+                .map_err(|error| exceptions::PyValueError::new_err(error.to_string()))?;
+            Ok(Integer::from(value))
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid integer"))
         }
