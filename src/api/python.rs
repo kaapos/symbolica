@@ -147,6 +147,7 @@ static LATEX_PRINT_OPTIONS: std::sync::LazyLock<PrintOptions> =
     });
 
 mod atom;
+mod condition;
 mod evaluator;
 mod expression;
 mod graph;
