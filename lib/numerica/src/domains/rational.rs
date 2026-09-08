@@ -216,6 +216,10 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<<FractionField<R> as Se
     fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
         let r = &self.ring;
 
+        if r.is_one(&a.denominator) && r.is_one(&b.denominator) {
+            return self.to_element_numerator(r.add(a.numerator, b.numerator));
+        }
+
         if a.denominator == b.denominator {
             let num = r.add(&a.numerator, &b.numerator);
             let g = r.gcd(&num, &a.denominator);
@@ -270,6 +274,9 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<<FractionField<R> as Se
 
     fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
         let r = &self.ring;
+        if r.is_one(&a.denominator) && r.is_one(&b.denominator) {
+            return self.to_element_numerator(r.mul(a.numerator, b.numerator));
+        }
         let gcd1 = r.gcd(&a.numerator, &b.denominator);
         let gcd2 = r.gcd(&a.denominator, &b.numerator);
 
@@ -318,11 +325,11 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<<FractionField<R> as Se
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
-        self.add_assign(a, &self.mul(b, c));
+        self.add_mul_assign(a, &b, &c);
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
-        self.sub_assign(a, &self.mul(b, c));
+        self.sub_mul_assign(a, &b, &c);
     }
 
     fn neg(&self, a: Self::Element) -> Self::Element {
@@ -338,6 +345,10 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<&<FractionField<R> as S
 {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let r = &self.ring;
+
+        if r.is_one(&a.denominator) && r.is_one(&b.denominator) {
+            return self.to_element_numerator(r.add(&a.numerator, &b.numerator));
+        }
 
         if a.denominator == b.denominator {
             let num = r.add(&a.numerator, &b.numerator);
@@ -394,6 +405,9 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<&<FractionField<R> as S
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let r = &self.ring;
+        if r.is_one(&a.denominator) && r.is_one(&b.denominator) {
+            return self.to_element_numerator(r.mul(&a.numerator, &b.numerator));
+        }
         let gcd1 = r.gcd(&a.numerator, &b.denominator);
         let gcd2 = r.gcd(&a.denominator, &b.numerator);
 
@@ -429,11 +443,19 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<&<FractionField<R> as S
     }
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        if self.ring.is_one(&a.denominator) && self.ring.is_one(&b.denominator) {
+            self.ring.add_assign(&mut a.numerator, &b.numerator);
+            return;
+        }
         // TODO: optimize
         *a = self.add(&*a, b);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        if self.ring.is_one(&a.denominator) && self.ring.is_one(&b.denominator) {
+            self.ring.sub_assign(&mut a.numerator, &b.numerator);
+            return;
+        }
         *a = self.sub(&*a, b);
     }
 
@@ -442,10 +464,26 @@ impl<R: EuclideanDomain + FractionNormalization> RingOps<&<FractionField<R> as S
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        if self.ring.is_one(&a.denominator)
+            && self.ring.is_one(&b.denominator)
+            && self.ring.is_one(&c.denominator)
+        {
+            self.ring
+                .add_mul_assign(&mut a.numerator, &b.numerator, &c.numerator);
+            return;
+        }
         self.add_assign(a, &self.mul(b, c));
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        if self.ring.is_one(&a.denominator)
+            && self.ring.is_one(&b.denominator)
+            && self.ring.is_one(&c.denominator)
+        {
+            self.ring
+                .sub_mul_assign(&mut a.numerator, &b.numerator, &c.numerator);
+            return;
+        }
         self.sub_assign(a, &self.mul(b, c));
     }
 
