@@ -1,3 +1,5 @@
+use std::{collections::HashMap as StdHashMap, hash::BuildHasher};
+
 use crate::{atom::InlineVar, coefficient::ConvertToRing};
 
 use super::*;
@@ -4043,7 +4045,7 @@ impl<'a> AtomView<'a> {
 
     pub(crate) fn evaluate<A: AtomCore + KeyLookup, T: Real + EvaluationDomain>(
         &self,
-        map: &HashMap<A, T>,
+        map: &StdHashMap<A, T, impl BuildHasher>,
         binary_prec: u32,
     ) -> Result<T, EvaluationError> {
         let mut cache = HashMap::default();
@@ -4052,7 +4054,7 @@ impl<'a> AtomView<'a> {
 
     fn evaluate_impl<A: AtomCore + KeyLookup, T: Real + EvaluationDomain>(
         &self,
-        map: &HashMap<A, T>,
+        map: &StdHashMap<A, T, impl BuildHasher>,
         cache: &mut HashMap<AtomView<'a>, T>,
         binary_prec: u32,
     ) -> Result<T, EvaluationError> {
@@ -4285,7 +4287,7 @@ impl<'a> AtomView<'a> {
 
     pub(crate) fn evaluate_in_ring<A: AtomCore + KeyLookup, R: ConvertToRing>(
         &self,
-        map: &HashMap<A, R::Element>,
+        map: &StdHashMap<A, R::Element, impl BuildHasher>,
         ring: &R,
     ) -> Result<R::Element, EvaluationError> {
         self.evaluate_in_ring_impl(map, &mut HashMap::new(), ring)
@@ -4293,7 +4295,7 @@ impl<'a> AtomView<'a> {
 
     fn evaluate_in_ring_impl<A: AtomCore + KeyLookup, R: ConvertToRing>(
         &self,
-        map: &HashMap<A, R::Element>,
+        map: &StdHashMap<A, R::Element, impl BuildHasher>,
         cache: &mut HashMap<AtomView<'a>, R::Element>,
         ring: &R,
     ) -> Result<R::Element, EvaluationError> {
