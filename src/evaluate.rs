@@ -57,7 +57,7 @@ use function_map::Expr;
 use instruction::Instr;
 
 use crate::{
-    LicenseManager, OperationCount,
+    LicenseManager,
     atom::{Atom, AtomCore, AtomView, EvaluationInfo, Indeterminate, KeyLookup, Symbol},
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
@@ -78,6 +78,85 @@ use crate::{
     state::State,
     utils::AbortCheck,
 };
+
+/// The number of operations needed by an evaluator or expression tree.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct OperationCount {
+    /// The number of additions.
+    pub additions: usize,
+    /// The number of multiplications.
+    pub multiplications: usize,
+    /// The number of inversions.
+    pub inversions: usize,
+    /// The number of function calls.
+    pub function_calls: usize,
+}
+
+impl OperationCount {
+    /// Create a new operation count.
+    pub fn new(
+        additions: usize,
+        multiplications: usize,
+        inversions: usize,
+        function_calls: usize,
+    ) -> Self {
+        Self {
+            additions,
+            multiplications,
+            inversions,
+            function_calls,
+        }
+    }
+
+    /// Add the cost of raising a value to an integer power.
+    ///
+    /// Negative powers count as one inversion plus the multiplications required for the absolute
+    /// power. For example, `x^-3` counts as one inversion and two multiplications.
+    pub fn add_integer_power(&mut self, exponent: i64) {
+        if exponent < 0 {
+            self.inversions += 1;
+        }
+
+        self.multiplications += exponent.unsigned_abs().saturating_sub(1) as usize;
+    }
+
+    /// Add one function call.
+    pub fn add_function_call(&mut self) {
+        self.function_calls += 1;
+    }
+}
+
+impl std::ops::Add for OperationCount {
+    type Output = OperationCount;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        OperationCount {
+            additions: self.additions + rhs.additions,
+            multiplications: self.multiplications + rhs.multiplications,
+            inversions: self.inversions + rhs.inversions,
+            function_calls: self.function_calls + rhs.function_calls,
+        }
+    }
+}
+
+impl std::ops::AddAssign for OperationCount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.additions += rhs.additions;
+        self.multiplications += rhs.multiplications;
+        self.inversions += rhs.inversions;
+        self.function_calls += rhs.function_calls;
+    }
+}
+
+impl std::fmt::Display for OperationCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} +, {} ×, {} x⁻¹, {} f(·)",
+            self.additions, self.multiplications, self.inversions, self.function_calls
+        )
+    }
+}
 
 #[cfg(test)]
 mod test {
