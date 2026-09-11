@@ -1,5 +1,6 @@
 [workspace]
-members = ["lib/numerica", "lib/graphica"]
+members = []
+exclude = ["lib/numerica", "lib/graphica"]
 resolver = "3"
 
 [package]
@@ -112,6 +113,3 @@ pyo3-log = { version = "0.13", optional = true }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 symjit = "2.21"
 
-[patch.crates-io]
-numerica = { path = "lib/numerica" }
-graphica = { path = "lib/graphica" }
