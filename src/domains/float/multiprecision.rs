@@ -11,7 +11,10 @@ use xprec::{CompensatedArithmetic, Df64};
 use super::{DoubleFloat, FloatLike, Real, RealLike, SingleFloat};
 use crate::domains::{
     InternalOrdering,
-    backend::float::{Assign, CompleteRound, Constant, MultiPrecisionFloat, Pow},
+    backend::float::{
+        Assign, CompleteRound, Constant, MultiPrecisionFloat, MultiPrecisionFloatInteger,
+        MultiPrecisionFloatRational, MultiPrecisionFloatRounding, Pow, RoundingDirection,
+    },
     integer::Integer,
     rational::Rational,
 };
@@ -439,7 +442,7 @@ impl<R: Into<Rational>> Add<R> for Float {
         fn get_bits(i: &Integer) -> i32 {
             match i {
                 Integer::Single(n) => n.unsigned_abs().ilog2() as i32 + 1,
-                Integer::Double(n) => n.unsigned_abs().ilog2() as i32 + 1,
+                Integer::Double(n) => n.get().unsigned_abs().ilog2() as i32 + 1,
                 Integer::Large(r) => r.significant_bits() as i32,
             }
         }
@@ -464,8 +467,8 @@ impl<R: Into<Rational>> Add<R> for Float {
 
             let mut r = match rhs.numerator() {
                 Integer::Single(n) => self.0 + n,
-                Integer::Double(n) => self.0 + n,
-                Integer::Large(n) => self.0 + n,
+                Integer::Double(n) => self.0 + n.get(),
+                Integer::Large(n) => self.0.add_integer(n),
             };
 
             if let Some(e) = r.get_exp() {
@@ -513,12 +516,14 @@ impl<R: Into<Rational>> Mul<R> for Float {
         if r.is_integer() {
             match r.numerator() {
                 Integer::Single(n) => self.0 * n,
-                Integer::Double(n) => self.0 * n,
-                Integer::Large(n) => self.0 * n,
+                Integer::Double(n) => self.0 * n.get(),
+                Integer::Large(n) => self.0.mul_integer(n),
             }
             .into()
         } else {
-            (self.0 * r.to_multi_prec()).into()
+            let num = r.numerator().to_multi_prec();
+            let den = r.denominator().to_multi_prec();
+            self.0.mul_integer_ratio(num, den).into()
         }
     }
 }
@@ -532,12 +537,14 @@ impl<R: Into<Rational>> Div<R> for Float {
         if r.is_integer() {
             match r.numerator() {
                 Integer::Single(n) => self.0 / n,
-                Integer::Double(n) => self.0 / n,
-                Integer::Large(n) => self.0 / n,
+                Integer::Double(n) => self.0 / n.get(),
+                Integer::Large(n) => self.0.div_integer(n),
             }
             .into()
         } else {
-            (self.0 / r.to_multi_prec()).into()
+            let num = r.numerator().to_multi_prec();
+            let den = r.denominator().to_multi_prec();
+            self.0.div_integer_ratio(num, den).into()
         }
     }
 }
@@ -561,6 +568,24 @@ impl From<&DoubleFloat> for Float {
 }
 
 impl Float {
+    /// Wrap a value from the selected arbitrary-precision float backend.
+    #[inline]
+    pub fn from_raw(value: MultiPrecisionFloat) -> Self {
+        Self(value)
+    }
+
+    /// Borrow the value from the selected arbitrary-precision float backend.
+    #[inline]
+    pub fn as_raw(&self) -> &MultiPrecisionFloat {
+        &self.0
+    }
+
+    /// Clone the value from the selected arbitrary-precision float backend.
+    #[inline]
+    pub fn to_raw(&self) -> MultiPrecisionFloat {
+        self.0.clone()
+    }
+
     pub fn new(prec: u32) -> Self {
         Float(MultiPrecisionFloat::new(prec))
     }
@@ -572,12 +597,71 @@ impl Float {
         Float(MultiPrecisionFloat::with_val(prec, val))
     }
 
+    /// Construct a multi-precision float from a backend-independent integer.
+    pub fn with_integer(prec: u32, value: crate::domains::integer::MultiPrecisionInteger) -> Self {
+        Float(MultiPrecisionFloat::from_integer(prec, value))
+    }
+
     pub fn prec(&self) -> u32 {
         self.0.prec()
     }
 
     pub fn set_prec(&mut self, prec: u32) {
         self.0.set_prec(prec);
+    }
+
+    /// Adds `rhs` and rounds the result to `prec` binary digits in `direction`.
+    ///
+    /// In particular, [`RoundingDirection::Down`] and
+    /// [`RoundingDirection::Up`] give lower and upper bounds, respectively,
+    /// for the exact sum of the represented values.
+    pub fn add_round(&self, rhs: &Self, prec: u32, direction: RoundingDirection) -> Self {
+        self.0.add_round(&rhs.0, prec, direction).into()
+    }
+
+    /// Subtracts `rhs` and rounds the result to `prec` binary digits in
+    /// `direction`.
+    ///
+    /// In particular, [`RoundingDirection::Down`] and
+    /// [`RoundingDirection::Up`] give lower and upper bounds, respectively,
+    /// for the exact difference of the represented values.
+    pub fn sub_round(&self, rhs: &Self, prec: u32, direction: RoundingDirection) -> Self {
+        self.0.sub_round(&rhs.0, prec, direction).into()
+    }
+
+    /// Multiplies by `rhs` and rounds the result to `prec` binary digits in
+    /// `direction`.
+    ///
+    /// In particular, [`RoundingDirection::Down`] and
+    /// [`RoundingDirection::Up`] give lower and upper bounds, respectively,
+    /// for the exact product of the represented values.
+    pub fn mul_round(&self, rhs: &Self, prec: u32, direction: RoundingDirection) -> Self {
+        self.0.mul_round(&rhs.0, prec, direction).into()
+    }
+
+    /// Divides by `rhs` and rounds the result to `prec` binary digits in
+    /// `direction`.
+    ///
+    /// For nonzero `rhs`, [`RoundingDirection::Down`] and
+    /// [`RoundingDirection::Up`] give lower and upper bounds, respectively,
+    /// for the exact quotient of the represented values.
+    pub fn div_round(&self, rhs: &Self, prec: u32, direction: RoundingDirection) -> Self {
+        self.0.div_round(&rhs.0, prec, direction).into()
+    }
+
+    /// Converts the exact rational `value` to `prec` binary digits, rounding
+    /// in `direction`.
+    ///
+    /// [`RoundingDirection::Down`] and [`RoundingDirection::Up`] give a lower
+    /// and upper bound, respectively, for `value`.
+    pub fn from_rational_round(value: &Rational, prec: u32, direction: RoundingDirection) -> Self {
+        MultiPrecisionFloat::from_integer_ratio_round(
+            value.numerator().to_multi_prec(),
+            value.denominator().to_multi_prec(),
+            prec,
+            direction,
+        )
+        .into()
     }
 
     pub fn is_finite(&self) -> bool {
@@ -602,7 +686,8 @@ impl Float {
         DoubleFloat(Df64::compensated_sum(hi, residual.to_f64()))
     }
 
-    /// Parse a float from a string.
+    /// Parse decimal notation, optionally with an `e`/`E` exponent, or NaN/infinity.
+    /// An explicit `prec` is in bits and overrides a backtick suffix.
     /// Precision can be specified by a trailing backtick followed by the precision.
     /// For example: ```1.234`20``` for a precision of 20 decimal digits.
     /// The precision is allowed to be a floating point number.
@@ -610,41 +695,100 @@ impl Float {
     /// or a backtick without a number following), the precision is derived from the string, with
     /// a minimum of 53 bits (`f64` precision).
     pub fn parse(s: &str, prec: Option<u32>) -> Result<Self, String> {
-        if let Some(prec) = prec {
-            Ok(Float(
-                MultiPrecisionFloat::parse(s)
-                    .map_err(|e| e.to_string())?
-                    .complete(prec),
-            ))
-        } else if let Some((f, p)) = s.split_once('`') {
-            let prec = if p.is_empty() {
-                53
-            } else {
-                (p.parse::<f64>()
-                    .map_err(|e| format!("Invalid precision: {e}"))?
-                    * LOG2_10)
-                    .ceil() as u32
-            };
-
-            Ok(Float(
-                MultiPrecisionFloat::parse(f)
-                    .map_err(|e| e.to_string())?
-                    .complete(prec),
-            ))
+        let (value, suffix) = s
+            .trim()
+            .split_once('`')
+            .map_or((s.trim(), None), |(v, p)| (v, Some(p)));
+        let suffix_precision = suffix
+            .filter(|p| !p.is_empty())
+            .map(|p| {
+                Self::decimal_digits_to_bits(
+                    p.parse::<f64>()
+                        .map_err(|e| format!("Invalid precision: {e}"))?,
+                )
+            })
+            .transpose()?;
+        let precision = if let Some(prec) = prec {
+            Self::check_precision(prec)?;
+            prec
+        } else if let Some(prec) = suffix_precision {
+            prec
         } else {
-            // get the number of accurate digits
-            let digits = s
+            // Count significant decimal digits in the significand, excluding the
+            // sign, decimal point, leading zeroes, and scientific exponent.
+            let digits = value
+                .split(['e', 'E'])
+                .next()
+                .unwrap_or(value)
                 .chars()
-                .skip_while(|x| *x == '.' || *x == '0')
-                .take_while(|x| x.is_ascii_digit())
+                .filter(char::is_ascii_digit)
+                .skip_while(|c| *c == '0')
                 .count();
+            Self::decimal_digits_to_bits(digits.max(1) as f64)?.max(53)
+        };
+        // Handle special values consistently across backends. Astro's parser
+        // uses NaN to report invalid input, so it cannot distinguish a NaN literal.
+        let special = match value.to_ascii_lowercase().as_str() {
+            "nan" | "+nan" | "-nan" => Some(f64::NAN),
+            "inf" | "+inf" | "infinity" | "+infinity" => Some(f64::INFINITY),
+            "-inf" | "-infinity" => Some(f64::NEG_INFINITY),
+            _ => None,
+        };
+        if let Some(value) = special {
+            return Ok(Float::with_val(precision, value));
+        }
 
-            let prec = ((digits as f64 * LOG2_10).ceil() as u32).max(53);
-            Ok(Float(
-                MultiPrecisionFloat::parse(s)
-                    .map_err(|e| e.to_string())?
-                    .complete(prec),
-            ))
+        // Validate the whole decimal literal: some backends accept a valid
+        // prefix (for example, `1e`) instead of reporting malformed input.
+        let unsigned = value.strip_prefix(['+', '-']).unwrap_or(value);
+        let (mantissa, exponent) = unsigned
+            .split_once(['e', 'E'])
+            .map_or((unsigned, None), |(m, e)| (m, Some(e)));
+        let valid_exponent = exponent.is_none_or(|e| {
+            let e = e.strip_prefix(['+', '-']).unwrap_or(e);
+            !e.is_empty() && e.bytes().all(|c| c.is_ascii_digit())
+        });
+        if !valid_exponent
+            || !mantissa.bytes().any(|c| c.is_ascii_digit())
+            || mantissa.bytes().any(|c| !c.is_ascii_digit() && c != b'.')
+            || mantissa.bytes().filter(|&c| c == b'.').count() > 1
+        {
+            return Err(format!("Invalid decimal float: {value}"));
+        }
+
+        #[cfg(feature = "float-astro")]
+        return MultiPrecisionFloat::parse_at_prec(value, precision).map(Float);
+
+        #[cfg(feature = "float-mpfr")]
+        Ok(Float(
+            MultiPrecisionFloat::parse(value)
+                .map_err(|e| e.to_string())?
+                .complete(precision),
+        ))
+    }
+
+    /// Convert a positive, finite decimal precision to a supported binary precision.
+    pub fn decimal_digits_to_bits(digits: f64) -> Result<u32, String> {
+        let bits = (digits * LOG2_10).ceil();
+        if !digits.is_finite() || digits <= 0. || bits > u32::MAX as f64 {
+            return Err(format!(
+                "Invalid decimal precision {digits}: expected a positive finite precision fitting in a u32 binary precision"
+            ));
+        }
+        let bits = bits as u32;
+        Self::check_precision(bits)?;
+        Ok(bits)
+    }
+
+    pub(crate) fn check_precision(prec: u32) -> Result<(), String> {
+        #[cfg(feature = "float-mpfr")]
+        let valid = (rug::float::prec_min()..=rug::float::prec_max()).contains(&prec);
+        #[cfg(not(feature = "float-mpfr"))]
+        let valid = prec > 0;
+        if valid {
+            Ok(())
+        } else {
+            Err(format!("Invalid binary precision {prec}"))
         }
     }
 
@@ -665,25 +809,44 @@ impl Float {
     }
 
     pub fn to_rational(&self) -> Rational {
-        self.0.to_rational().unwrap().into()
+        let (num, den) = self.0.to_integer_ratio().unwrap();
+        Rational::from_int_unchecked(num, den)
     }
 
     pub fn try_to_rational(&self) -> Option<Rational> {
-        self.0.to_rational().map(|x| x.into())
+        self.0
+            .to_integer_ratio()
+            .map(|(num, den)| Rational::from_int_unchecked(num, den))
     }
 
-    pub fn into_inner(self) -> MultiPrecisionFloat {
+    /// Consume this wrapper and return the selected backend's value.
+    #[inline]
+    pub fn into_raw(self) -> MultiPrecisionFloat {
         self.0
     }
 }
 
 impl From<MultiPrecisionFloat> for Float {
     fn from(value: MultiPrecisionFloat) -> Self {
-        Float(value)
+        Self::from_raw(value)
     }
 }
 
 impl FloatLike for Float {
+    fn nan(&self) -> Option<Self> {
+        Some(Float::with_val(self.prec(), f64::NAN))
+    }
+
+    #[inline(always)]
+    fn real_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(other)
+    }
+
+    #[inline(always)]
+    fn needs_rescaling(&self) -> bool {
+        !self.is_finite() || self.is_zero()
+    }
+
     #[inline(always)]
     fn set_from(&mut self, other: &Self) {
         self.0.clone_from(&other.0);
@@ -797,11 +960,26 @@ impl RealLike for Float {
 
     #[inline(always)]
     fn round_to_nearest_integer(&self) -> Integer {
-        self.0.to_integer().unwrap().into()
+        self.0.to_integer_exact().unwrap().into()
     }
 }
 
 impl Real for Float {
+    #[cfg(feature = "float-mpfr")]
+    #[inline(always)]
+    fn log1p(&self) -> Self {
+        self.0.clone().ln_1p().into()
+    }
+
+    #[inline(always)]
+    fn copy_sign(&self, sign: &Self) -> Self {
+        if sign.is_negative() {
+            -self.norm()
+        } else {
+            self.norm()
+        }
+    }
+
     #[inline(always)]
     fn pi(&self) -> Self {
         MultiPrecisionFloat::with_val(self.prec(), Constant::Pi).into()
@@ -971,6 +1149,30 @@ impl Real for Float {
 impl Rational {
     // Convert the rational number to a multi-precision float with precision `prec`.
     pub fn to_multi_prec_float(&self, prec: u32) -> Float {
-        Float::with_val(prec, self.clone().to_multi_prec())
+        Float::from_rational_round(self, prec, RoundingDirection::Nearest)
+    }
+}
+
+#[cfg(test)]
+mod precision_tests {
+    use super::Float;
+
+    #[test]
+    fn invalid_precision_returns_errors() {
+        assert!(Float::parse("1", Some(0)).is_err());
+        for text in ["1`0", "1`-1", "1`NaN", "1`inf", "1`1e100"] {
+            assert!(Float::parse(text, None).is_err(), "{text}");
+        }
+        for digits in [0., -1., f64::NAN, f64::INFINITY, u32::MAX as f64] {
+            assert!(Float::decimal_digits_to_bits(digits).is_err());
+        }
+    }
+
+    #[test]
+    fn valid_precision_preserves_existing_parsing() {
+        assert_eq!(Float::decimal_digits_to_bits(40.).unwrap(), 133);
+        assert_eq!(Float::parse("1", Some(80)).unwrap().prec(), 80);
+        assert_eq!(Float::parse("1`40", None).unwrap().prec(), 133);
+        assert_eq!(Float::parse("1`", None).unwrap().prec(), 53);
     }
 }
