@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Callable, Iterator, Literal, Sequence, Union, overload
+from typing import Any, Callable, Iterator, Literal, Sequence, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -1826,20 +1826,24 @@ Rationals: SolveDomain
 Reals: SolveDomain
 Complexes: SolveDomain
 
-class SolveError(ValueError): ...
-class UnsupportedProblem(SolveError): ...
-class IncompleteCoverage(SolveError): ...
+class SolveError(ValueError):
+    """Base exception for invalid solve requests or failures to obtain the requested result."""
 
-SolveInput = Union[
-    "Expression", "Condition",
-    bool, int, float, complex, Float, ComplexFloat, Decimal,
-]
+class UnsupportedProblem(SolveError):
+    """The equations require a solving method that is not supported."""
+
+class IncompleteCoverage(SolveError):
+    """The requested conclusion cannot be established for all relevant cases."""
 
 class SolutionCondition:
+    """A formula or domain restriction under which a solution branch is valid."""
+
     @property
-    def kind(self) -> Literal["formula", "domain_membership"]: ...
+    def kind(self) -> Literal["formula", "domain_membership"]:
+        """The restriction type: ``"formula"`` or ``"domain_membership"``."""
     @property
-    def formula(self) -> Condition | None: ...
+    def formula(self) -> Condition | None:
+        """The symbolic condition, or None for a domain-membership restriction."""
     @property
     def variable(self) -> Expression | None:
         """The variable restricted by a domain-membership condition, otherwise None."""
@@ -5047,7 +5051,12 @@ class Expression:
 
     @classmethod
     def solve(
-        _cls, system: SolveInput | Sequence[SolveInput], variables: Sequence[Expression], *,
+        _cls,
+        system: (
+            Expression | Condition | bool | int | float | complex | Float | ComplexFloat | Decimal
+            | Sequence[Expression | Condition | bool | int | float | complex | Float | ComplexFloat | Decimal]
+        ),
+        variables: Sequence[Expression], *,
         domain: SolveDomain | None = None,
     ) -> SolutionSet:
         """Find exact solutions to an equation or a system of equations.
@@ -5125,7 +5134,7 @@ class Expression:
 
         Parameters
         ----------
-        system: SolveInput | Sequence[SolveInput]
+        system: Expression, Condition, bool, number, or sequence of these
             Equation or equations to satisfy, written as expressions equal to zero
             or using ``eq``. Supports polynomial and rational equations and some
             equations involving rational powers. Inequalities and general Boolean
@@ -5562,6 +5571,8 @@ class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 class HeldExpression:
+    """A deferred symbolic computation. Call the object to execute it."""
+
     def __call__(self) -> Expression:
         """
         Execute a bound transformer. If the transformer is unbound,
@@ -12501,6 +12512,8 @@ class Graph:
         """
 
 class Integer:
+    """Number-theoretic operations on Python integers, including factoring and primality testing."""
+
     @classmethod
     def prime_iter(_cls, start: int = 1) -> Iterator[int]:
         """
